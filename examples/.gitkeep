@@ -1,0 +1,3 @@
+# Sample workspaces will live here.
+# First example: examples/basic/ — a workspace with one REST collection demonstrating
+# environments, variables, and assertions. Created during E2 (workspace + format).

@@ -1,0 +1,30 @@
+{
+  "name": "argos",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Argos — fast, git-native API client. Free for individuals, monetised through managed CRDT relay for teams.",
+  "homepage": "https://argos.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/argos-app/argos"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @argos/ui dev",
+    "build": "pnpm --filter @argos/ui build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "tauri:dev": "pnpm --filter @argos/desktop tauri dev",
+    "tauri:build": "pnpm --filter @argos/desktop tauri build"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0"
+}

@@ -1,0 +1,21 @@
+[package]
+name = "argos-cli"
+description = "Argos CLI — run collections in CI, manage workspaces from the terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "argos"
+path = "src/main.rs"
+
+[dependencies]
+argos-core = { workspace = true }
+clap = { version = "4", features = ["derive", "env", "color"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

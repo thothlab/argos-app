@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme tokens (mirror docs/06_designer_specification + design.pen). */
+    --bg-primary: #f2f3f0;
+    --bg-card: #ffffff;
+    --bg-secondary: #e7e8e5;
+    --fg-primary: #111111;
+    --fg-secondary: #666666;
+    --border: #cbccc9;
+
+    --primary: #ff8400;
+    --primary-foreground: #111111;
+
+    --color-success: #dfe6e1;
+    --color-success-foreground: #004d1a;
+    --color-warning: #e9e3d8;
+    --color-warning-foreground: #804200;
+    --color-error: #e5dcda;
+    --color-error-foreground: #8c1c00;
+    --color-info: #dfdfe6;
+    --color-info-foreground: #000066;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg-primary: #111111;
+      --bg-card: #1a1a1a;
+      --bg-secondary: #2e2e2e;
+      --fg-primary: #ffffff;
+      --fg-secondary: #b8b9b6;
+      --border: #2e2e2e;
+
+      --color-success: #222924;
+      --color-success-foreground: #b6ffce;
+      --color-warning: #291c0f;
+      --color-warning-foreground: #ff8400;
+      --color-error: #24100b;
+      --color-error-foreground: #ff5c33;
+      --color-info: #222229;
+      --color-info-foreground: #b2b2ff;
+    }
+  }
+
+  html,
+  body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg-primary);
+    color: var(--fg-primary);
+    font-family: 'Geist', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+}

@@ -1,0 +1,60 @@
+# Rust
+target/
+Cargo.lock.bak
+**/*.rs.bk
+
+# Node
+node_modules/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+dist/
+build/
+out/
+.output/
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+src-tauri/gen/
+
+# IDE
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.iml
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Test artefacts
+coverage/
+.nyc_output/
+*.lcov
+
+# Cache
+.cache/
+.turbo/
+.parcel-cache/
+
+# Misc
+*.swp
+*.swo
+*~
+
+# Pencil temp exports (keep design.pen and design-exports/)
+# (nothing to ignore for now)

@@ -1,0 +1,53 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/cli",
+    "crates/core-wasm",
+    "crates/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "Apache-2.0"
+repository = "https://github.com/argos-app/argos"
+authors = ["Argos contributors"]
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "io-util", "time"] }
+
+# HTTP
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "gzip", "brotli", "deflate"] }
+hyper = "1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# Errors
+thiserror = "1"
+anyhow = "1"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Utilities
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
+# Internal crates
+argos-core = { path = "crates/core", version = "0.1.0" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = "z"
+
+[profile.dev]
+debug = 1
