@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::format::request::RequestDraft;
 
+pub mod insomnia;
 pub mod postman;
 
 /// Result of importing a single source file.

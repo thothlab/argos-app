@@ -28,7 +28,13 @@ import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { activeEnvName, setActiveEnvName } from '../stores/active-env';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { closeAllTabs } from '../stores/tabs';
-import { postmanExport, postmanImport, workspaceClose, workspaceReload } from '../lib/api';
+import {
+  insomniaImport,
+  postmanExport,
+  postmanImport,
+  workspaceClose,
+  workspaceReload,
+} from '../lib/api';
 import { label } from '../lib/hotkeys';
 import CurlImportModal from './CurlImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
@@ -97,6 +103,12 @@ function CurlImportControl() {
             >
               <span>From Postman v2.1 (JSON)…</span>
             </DropdownMenu.Item>
+            <DropdownMenu.Item
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              onSelect={() => void importInsomniaFlow()}
+            >
+              <span>From Insomnia v4 (JSON)…</span>
+            </DropdownMenu.Item>
             <div class="my-1 h-px bg-border" />
             <DropdownMenu.Item
               class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
@@ -113,6 +125,38 @@ function CurlImportControl() {
 }
 
 async function importPostmanFlow(): Promise<void> {
+  await runImportFlow({
+    pickerLabel: 'Postman v2.1 collection',
+    pickerExtensions: ['json'],
+    importer: postmanImport,
+  });
+}
+
+async function importInsomniaFlow(): Promise<void> {
+  await runImportFlow({
+    pickerLabel: 'Insomnia v4 export',
+    pickerExtensions: ['json'],
+    importer: insomniaImport,
+  });
+}
+
+type ImporterFn = (
+  workspaceRoot: string,
+  source: string,
+  inline?: boolean,
+) => Promise<{
+  folder_path: string;
+  folders_created: number;
+  requests_created: number;
+  variables_count: number;
+  env_path: string | null;
+}>;
+
+async function runImportFlow(opts: {
+  pickerLabel: string;
+  pickerExtensions: string[];
+  importer: ImporterFn;
+}): Promise<void> {
   const ws = workspace();
   if (!ws) {
     window.alert('Open a workspace first.');
@@ -123,7 +167,7 @@ async function importPostmanFlow(): Promise<void> {
     const { open } = await import('@tauri-apps/plugin-dialog');
     picked = await open({
       multiple: false,
-      filters: [{ name: 'Postman v2.1 collection', extensions: ['json'] }],
+      filters: [{ name: opts.pickerLabel, extensions: opts.pickerExtensions }],
     });
   } catch (e) {
     window.alert(`Could not open file picker: ${e instanceof Error ? e.message : String(e)}`);
@@ -132,12 +176,11 @@ async function importPostmanFlow(): Promise<void> {
   if (!picked || Array.isArray(picked)) return;
 
   try {
-    const report = await postmanImport(ws.root, picked as string, false);
+    const report = await opts.importer(ws.root, picked, false);
     const env = report.env_path ? `, ${report.variables_count} variables → env file` : '';
     window.alert(
       `Imported ${report.requests_created} requests in ${report.folders_created} folders${env}.`,
     );
-    // Reload the workspace tree from disk so the new folder shows up.
     const refreshed = await workspaceReload(ws.root);
     setWorkspace(refreshed);
   } catch (e) {
