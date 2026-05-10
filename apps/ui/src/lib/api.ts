@@ -102,6 +102,30 @@ export async function postmanImport(
   });
 }
 
+/** Export the active workspace as a Postman v2.1 collection JSON.
+ *  Returns the absolute path of the written file. */
+export async function postmanExport(
+  workspaceRoot: string,
+  targetPath: string | null = null,
+): Promise<string> {
+  return invokeCommand<string>('postman_export', { workspaceRoot, targetPath });
+}
+
+/** Export one run as a HAR 1.2 archive. Returns the path of the file. */
+export async function runExportHar(
+  request: HttpRequest,
+  response: HttpResponse,
+  startedAtIso8601: string,
+  targetPath: string,
+): Promise<string> {
+  return invokeCommand<string>('run_export_har', {
+    request,
+    response,
+    startedAtIso8601,
+    targetPath,
+  });
+}
+
 // ---- workspace ----------------------------------------------------------
 
 export async function workspaceOpen(path: string): Promise<Workspace> {

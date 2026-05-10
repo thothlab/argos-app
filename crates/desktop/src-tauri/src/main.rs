@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use argos_core::codegen::curl;
 use argos_core::codegen::curl::from_curl;
+use argos_core::exports::{har, postman as postman_export};
 use argos_core::format::{slugify, EnvVar, Environment, Folder, RequestDraft};
 use argos_core::imports::postman;
 use argos_core::imports::ImportItem;
@@ -197,6 +198,55 @@ fn request_to_curl(req: HttpRequest, env: Option<HashMap<String, String>>) -> St
 #[tauri::command]
 fn curl_to_request(input: String) -> Result<HttpRequest, String> {
     from_curl(&input).map_err(|e| e.to_string())
+}
+
+/// Export the open workspace as a Postman v2.1 collection JSON.
+///
+/// Writes a pretty-printed `.postman_collection.json` next to the
+/// workspace root by default; the caller can override `target_path`
+/// to write anywhere else. Returns the resolved output path.
+#[tauri::command]
+fn postman_export(workspace_root: String, target_path: Option<String>) -> Result<String, String> {
+    let ws = Workspace::open(&workspace_root).map_err(|e| e.to_string())?;
+    let json = postman_export::to_postman_v21_string(&ws.manifest.name, &ws.tree)
+        .map_err(|e| e.to_string())?;
+
+    let path = match target_path {
+        Some(p) => PathBuf::from(p),
+        None => {
+            let slug = slugify(&ws.manifest.name);
+            Path::new(&workspace_root).join(format!("{slug}.postman_collection.json"))
+        }
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Export a single run as a HAR 1.2 archive.
+///
+/// `request` and `response` are JSON values matching `HttpRequest` /
+/// `HttpResponse` (the UI already has them as part of its run history,
+/// so we don't make it round-trip through the loader). Returns the
+/// path of the freshly written `.har` file.
+#[tauri::command]
+fn run_export_har(
+    request: serde_json::Value,
+    response: serde_json::Value,
+    started_at_iso8601: String,
+    target_path: String,
+) -> Result<String, String> {
+    let req: HttpRequest = serde_json::from_value(request).map_err(|e| e.to_string())?;
+    let res: HttpResponse = serde_json::from_value(response).map_err(|e| e.to_string())?;
+    let json = har::to_har_string(&req, &res, &started_at_iso8601).map_err(|e| e.to_string())?;
+    let path = PathBuf::from(target_path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 /// Outcome of a Postman v2.1 import. The host UI uses these counts
@@ -891,6 +941,8 @@ fn main() {
             request_to_curl,
             curl_to_request,
             postman_import,
+            postman_export,
+            run_export_har,
             workspace_open,
             workspace_create,
             workspace_close,

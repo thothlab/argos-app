@@ -6,8 +6,10 @@
  * when new runs are recorded.
  */
 
+import { Download } from 'lucide-solid';
 import { For, Show } from 'solid-js';
 
+import { runExportHar } from '../lib/api';
 import { setResponse } from '../stores/request';
 import { runsFor, type Run } from '../stores/runs';
 import { activeTabId } from '../stores/tabs';
@@ -55,6 +57,7 @@ export default function RunHistoryView() {
             <th class="px-3 py-2 font-medium">Status</th>
             <th class="px-3 py-2 font-medium">Took</th>
             <th class="px-3 py-2 font-medium">Size</th>
+            <th class="w-8 px-2 py-2" />
           </tr>
         </thead>
         <tbody>
@@ -83,6 +86,19 @@ export default function RunHistoryView() {
                 </td>
                 <td class="px-3 py-1.5 text-fg-secondary">{run.response.timing.total_ms} ms</td>
                 <td class="px-3 py-1.5 text-fg-secondary">{formatBytes(run.response.body.size_bytes)}</td>
+                <td class="px-2 py-1.5">
+                  <button
+                    type="button"
+                    class="rounded p-1 text-fg-secondary hover:bg-bg-card hover:text-fg-primary"
+                    title="Export this run as HAR"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void exportRunAsHar(run);
+                    }}
+                  >
+                    <Download size={12} />
+                  </button>
+                </td>
               </tr>
             )}
           </For>
@@ -108,4 +124,35 @@ function statusColor(s: number): string {
   if (s >= 400) return 'var(--color-warning-foreground)';
   if (s >= 300) return 'var(--color-info-foreground)';
   return 'var(--color-success-foreground)';
+}
+
+async function exportRunAsHar(run: Run): Promise<void> {
+  const iso = new Date(run.startedAt).toISOString();
+  // Stamp the file with method + status so a folder of HARs is
+  // self-documenting.
+  const safeUrl = run.request.url
+    .replace(/^https?:\/\//, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .slice(0, 60);
+  const defaultName = `${run.request.method.toLowerCase()}-${safeUrl}-${run.response.status}.har`;
+
+  let target: string | null = null;
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    target = await save({
+      defaultPath: defaultName,
+      filters: [{ name: 'HAR 1.2', extensions: ['har'] }],
+    });
+  } catch (e) {
+    window.alert(`Could not open file picker: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (!target) return;
+
+  try {
+    const written = await runExportHar(run.request, run.response, iso, target);
+    window.alert(`Saved HAR to ${written}.`);
+  } catch (e) {
+    window.alert(`HAR export failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
