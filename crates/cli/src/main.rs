@@ -1,14 +1,17 @@
 //! Argos CLI entry point.
 //!
-//! T7.1 deliverable: `argos list` and `argos validate` work against an
-//! opened workspace; `argos run` accepts the flags but defers execution
-//! to T7.2 (collection runner).
+//! T7.1 added `argos list` and `argos validate`; T7.2 wires up
+//! `argos run` against the collection runner in `runner.rs`.
+
+mod runner;
 
 use std::path::{Path, PathBuf};
 
 use argos_core::format::request::RequestVariant;
 use argos_core::{TreeNode, Workspace};
 use clap::{Parser, Subcommand};
+
+use runner::{print_report, RunOptions};
 
 #[derive(Parser)]
 #[command(
@@ -62,8 +65,21 @@ fn main() -> anyhow::Result<()> {
             println!("Run `argos --help` to see commands.");
         }
         Some(Commands::Run { path, env, bail }) => {
-            tracing::info!(?path, ?env, bail, "run command (deferred to T7.2)");
-            anyhow::bail!("`run` is not yet implemented (Epic E7, T7.2).");
+            let ws_root = cli
+                .workspace
+                .clone()
+                .or_else(|| infer_workspace_root(Path::new(&path)))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "could not infer workspace root from {path}; pass --workspace explicitly"
+                    )
+                })?;
+            let target = Path::new(&path).to_path_buf();
+            let report = run_command(&ws_root, &target, env, bail)?;
+            print_report(&report);
+            if report.failed() > 0 {
+                std::process::exit(1);
+            }
         }
         Some(Commands::List { path }) => {
             let root = resolve_root(path.as_deref(), cli.workspace.as_deref())?;
@@ -76,6 +92,44 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn run_command(
+    workspace_root: &Path,
+    target: &Path,
+    env: Option<String>,
+    bail: bool,
+) -> anyhow::Result<runner::RunReport> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(runner::run(
+        workspace_root,
+        target,
+        RunOptions {
+            env_name: env,
+            bail,
+        },
+    ))
+}
+
+/// Walk up from `target` looking for an `argos.yaml`; that directory
+/// is the workspace root. Falls back to `None` if we hit the
+/// filesystem root.
+fn infer_workspace_root(target: &Path) -> Option<PathBuf> {
+    let mut cursor = if target.is_file() {
+        target.parent()?.to_path_buf()
+    } else {
+        target.to_path_buf()
+    };
+    loop {
+        if cursor.join("argos.yaml").is_file() {
+            return Some(cursor);
+        }
+        if !cursor.pop() {
+            return None;
+        }
+    }
 }
 
 fn resolve_root(arg: Option<&str>, global: Option<&Path>) -> anyhow::Result<PathBuf> {

@@ -109,7 +109,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "argos-core",
+ "argos-scripting",
  "clap",
+ "httpmock",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
