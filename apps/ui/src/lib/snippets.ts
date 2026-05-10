@@ -133,6 +133,45 @@ export const SNIPPETS: Snippet[] = [
       '',
     ].join('\n'),
   },
+  {
+    id: 'pre-pm-bearer',
+    kind: 'pre',
+    label: 'pm: Set Bearer from env',
+    description: 'Postman-style: read pm.environment and stamp Authorization.',
+    body: [
+      "const token = pm.environment.get('token');",
+      'if (token) {',
+      "  pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token });",
+      '}',
+      '',
+    ].join('\n'),
+  },
+  {
+    id: 'tests-pm-status-200',
+    kind: 'tests',
+    label: 'pm: Status code is 200',
+    description: 'Postman-style status assertion using pm.test + pm.expect.',
+    body: [
+      "pm.test('Status code is 200', function () {",
+      '  pm.expect(pm.response.code).to.equal(200);',
+      '});',
+      '',
+    ].join('\n'),
+  },
+  {
+    id: 'tests-pm-save-token',
+    kind: 'tests',
+    label: 'pm: Save access_token',
+    description: 'Postman snippet — store access_token from response into env.',
+    body: [
+      'const data = pm.response.json();',
+      "pm.test('login returned token', function () {",
+      "  pm.expect(data).to.have.property('access_token');",
+      '});',
+      "pm.environment.set('token', data.access_token);",
+      '',
+    ].join('\n'),
+  },
 ];
 
 export function snippetsFor(kind: SnippetKind): Snippet[] {

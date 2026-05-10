@@ -58,6 +58,10 @@ pub struct SendOutcome {
     pub tests_logs: Vec<String>,
     pub tests: Vec<TestResult>,
     pub env_updates: HashMap<String, String>,
+    /// Names the script(s) cleared via `bru.env.unset` /
+    /// `pm.environment.unset`. Empty array if none.
+    #[serde(default)]
+    pub env_unsets: Vec<String>,
 }
 
 /// Execute one HTTP request via `argos-core` and return the buffered response.
@@ -80,6 +84,7 @@ async fn send_request(
     let mut env = env.unwrap_or_default();
     let mut pre_request_logs = Vec::new();
     let mut env_updates = HashMap::new();
+    let mut env_unsets: Vec<String> = Vec::new();
 
     let mut req = req;
     if let Some(script) = pre_request_script.as_ref().filter(|s| !s.trim().is_empty()) {
@@ -100,6 +105,7 @@ async fn send_request(
             run_pre_request(script, script_req, env.clone()).map_err(|e| e.to_string())?;
         pre_request_logs = outcome.logs;
         env_updates = outcome.env_updates;
+        env_unsets = outcome.env_unsets;
 
         // Apply mutations.
         if let Some(method) = parse_http_method(&outcome.request.method) {
@@ -119,9 +125,14 @@ async fn send_request(
             req.body = outcome.request.body.map(script_body_to_http);
         }
 
-        // Env updates feed into the resolver, but we don't persist them.
+        // Env updates / unsets feed into the resolver for *this* send.
+        // We don't persist them; downstream sends in the same session
+        // start from the disk-backed env again.
         for (k, v) in &env_updates {
             env.insert(k.clone(), v.clone());
+        }
+        for k in &env_unsets {
+            env.remove(k);
         }
     }
 
@@ -148,7 +159,15 @@ async fn send_request(
         tests_logs = outcome.logs;
         tests = outcome.tests;
         for (k, v) in outcome.env_updates {
+            // A set in tests overrides a tombstone from pre-request.
+            env_unsets.retain(|name| name != &k);
             env_updates.insert(k, v);
+        }
+        for k in outcome.env_unsets {
+            env_updates.remove(&k);
+            if !env_unsets.contains(&k) {
+                env_unsets.push(k);
+            }
         }
     }
 
@@ -158,6 +177,7 @@ async fn send_request(
         tests_logs,
         tests,
         env_updates,
+        env_unsets,
     })
 }
 
