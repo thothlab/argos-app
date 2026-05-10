@@ -8,10 +8,19 @@
 //!
 //! Pre-request scripts can use:
 //! - `bru.log(...args)`            — captures messages for the host UI.
+//! - `bru.info(...)` / `bru.warn(...)` — severity-tagged log lines
+//!                                   (rendered as `[info] ...` / `[warn] ...`).
+//! - `bru.fail(message)`           — throw a labelled error. Inside
+//!                                   `bru.test(...)` it counts as a test
+//!                                   failure; at the top level of a
+//!                                   pre-request script it surfaces as a
+//!                                   script error.
 //! - `bru.env.get(name)`           — read the active environment.
 //! - `bru.env.set(name, value)`    — propose a new env value.
 //! - `bru.req`                     — request snapshot the script can mutate
-//!                                   (`url`, `method`, `headers`).
+//!                                   (`url`, `method`, `headers`, body via
+//!                                   `getBody / setJsonBody / setTextBody /
+//!                                   setFormBody / clearBody`).
 //!
 //! Tests scripts (run after the response arrives) additionally see:
 //! - `bru.res.status` / `bru.res.body` / `bru.res.getHeader(name)`.
@@ -54,14 +63,18 @@ thread_local! {
 
 /// Snapshot of a request the script can read or mutate.
 ///
-/// Mirrors `argos_core::HttpRequest` minus the body — body mutation is
-/// deferred until we have a clean way to round-trip the body kind through
-/// JS objects (see `bru.req.body` in the next chunk).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Mirrors `argos_core::HttpRequest`. The body is exposed as
+/// [`ScriptBody`] — only the kinds a script can meaningfully manipulate
+/// are surfaced. `Raw` (binary) bodies are intentionally not represented
+/// here: the host should pass `body = None`, and re-attach the original
+/// `Raw` bytes after the script run if `body_modified` is `false`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ScriptRequest {
     pub method: String,
     pub url: String,
     pub headers: Vec<ScriptHeader>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<ScriptBody>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,11 +83,35 @@ pub struct ScriptHeader {
     pub value: String,
 }
 
+/// Body shape a pre-request script can read and replace.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ScriptBody {
+    Text {
+        content: String,
+        content_type: String,
+    },
+    Json {
+        value: serde_json::Value,
+    },
+    FormUrlEncoded {
+        fields: Vec<ScriptFormField>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptFormField {
+    pub name: String,
+    pub value: String,
+}
+
 /// Result of running a script. Captures both the mutations we want to
 /// apply and the human-readable diagnostics for the UI.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScriptOutcome {
-    /// Lines emitted via `bru.log` (one per call).
+    /// Lines emitted via `bru.log` / `bru.info` / `bru.warn` (one per
+    /// call). `info`/`warn` lines are prefixed with `[info] ` / `[warn] `
+    /// so the UI can colour them without a schema bump.
     pub logs: Vec<String>,
     /// Final request shape after the script ran. Same as the input if the
     /// script didn't touch `bru.req`.
@@ -83,6 +120,12 @@ pub struct ScriptOutcome {
     /// to merge these back into the active env (we don't persist them to
     /// disk by default — that would surprise users).
     pub env_updates: HashMap<String, String>,
+    /// `true` iff the script touched `bru.req` body (`setJsonBody`,
+    /// `setTextBody`, `setFormBody`, `clearBody`). When `false`, the host
+    /// should keep its original body — useful for `Raw` bodies the
+    /// script can't represent.
+    #[serde(default)]
+    pub body_modified: bool,
 }
 
 /// All errors a sandbox run can surface.
@@ -168,6 +211,7 @@ struct State {
     env: HashMap<String, String>,
     env_updates: HashMap<String, String>,
     tests: Vec<TestResult>,
+    body_modified: bool,
 }
 
 impl Sandbox {
@@ -185,6 +229,7 @@ impl Sandbox {
                 env,
                 env_updates: HashMap::new(),
                 tests: Vec::new(),
+                body_modified: false,
             });
         });
 
@@ -207,6 +252,7 @@ impl Sandbox {
             logs: state.logs,
             request: state.request,
             env_updates: state.env_updates,
+            body_modified: state.body_modified,
         }
     }
 
@@ -224,6 +270,8 @@ impl Sandbox {
     /// Install `bru.log` and `bru.env`. Both modes share these.
     fn install_bru_skeleton(ctx: &mut Context) -> Result<(), ScriptError> {
         let log_fn = NativeFunction::from_fn_ptr(bru_log);
+        let info_fn = NativeFunction::from_fn_ptr(bru_info);
+        let warn_fn = NativeFunction::from_fn_ptr(bru_warn);
         let env_get_fn = NativeFunction::from_fn_ptr(bru_env_get);
         let env_set_fn = NativeFunction::from_fn_ptr(bru_env_set);
 
@@ -234,6 +282,8 @@ impl Sandbox {
 
         let bru = ObjectInitializer::new(ctx)
             .function(log_fn, js_string!("log"), 1)
+            .function(info_fn, js_string!("info"), 1)
+            .function(warn_fn, js_string!("warn"), 1)
             .property(
                 PropertyKey::from(js_string!("env")),
                 env_obj,
@@ -247,6 +297,13 @@ impl Sandbox {
             Attribute::WRITABLE | Attribute::PERMANENT,
         )
         .map_err(|e| ScriptError::Runtime(format!("bru install: {e}")))?;
+
+        // `bru.fail(msg)` — pure JS so the thrown Error has a clean stack
+        // and a recognisable `message` ("bru.fail: <msg>"). Inside
+        // `bru.test(...)` the catch records it as a failure; at the top
+        // level it propagates to the host as a `ScriptError::Runtime`.
+        ctx.eval(Source::from_bytes(BRU_FAIL_PRELUDE))
+            .map_err(|e| ScriptError::Runtime(format!("bru.fail install: {e}")))?;
         Ok(())
     }
 
@@ -259,6 +316,11 @@ impl Sandbox {
         let req_set_header_fn = NativeFunction::from_fn_ptr(bru_req_set_header);
         let req_get_header_fn = NativeFunction::from_fn_ptr(bru_req_get_header);
         let req_remove_header_fn = NativeFunction::from_fn_ptr(bru_req_remove_header);
+        let req_get_body_fn = NativeFunction::from_fn_ptr(bru_req_get_body);
+        let req_set_json_body_fn = NativeFunction::from_fn_ptr(bru_req_set_json_body);
+        let req_set_text_body_fn = NativeFunction::from_fn_ptr(bru_req_set_text_body);
+        let req_set_form_body_fn = NativeFunction::from_fn_ptr(bru_req_set_form_body);
+        let req_clear_body_fn = NativeFunction::from_fn_ptr(bru_req_clear_body);
 
         let req_obj = ObjectInitializer::new(ctx)
             .function(req_get_url_fn, js_string!("getUrl"), 0)
@@ -268,6 +330,11 @@ impl Sandbox {
             .function(req_set_header_fn, js_string!("setHeader"), 2)
             .function(req_get_header_fn, js_string!("getHeader"), 1)
             .function(req_remove_header_fn, js_string!("removeHeader"), 1)
+            .function(req_get_body_fn, js_string!("getBody"), 0)
+            .function(req_set_json_body_fn, js_string!("setJsonBody"), 1)
+            .function(req_set_text_body_fn, js_string!("setTextBody"), 2)
+            .function(req_set_form_body_fn, js_string!("setFormBody"), 1)
+            .function(req_clear_body_fn, js_string!("clearBody"), 0)
             .build();
 
         let bru = ctx
@@ -327,7 +394,16 @@ impl Sandbox {
     }
 }
 
-const JS_PRELUDE: &str = r#"
+const BRU_FAIL_PRELUDE: &str = r"
+bru.fail = function(message) {
+  var msg = (message === undefined || message === null) ? '' : String(message);
+  var err = new Error('bru.fail: ' + msg);
+  err.__bruFail = true;
+  throw err;
+};
+";
+
+const JS_PRELUDE: &str = r"
 (function() {
   const status = bru.res.getStatus();
   const body = bru.res.getBody();
@@ -381,7 +457,7 @@ const JS_PRELUDE: &str = r#"
     }
   };
 })();
-"#;
+";
 
 // ---- native callbacks ----------------------------------------------------
 
@@ -406,8 +482,25 @@ fn bru_log(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsV
     Ok(JsValue::undefined())
 }
 
+fn bru_info(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let parts: Vec<String> = args.iter().map(|a| js_to_display(a, ctx)).collect();
+    let line = format!("[info] {}", parts.join(" "));
+    with_state(ctx, |s| s.logs.push(line));
+    Ok(JsValue::undefined())
+}
+
+fn bru_warn(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let parts: Vec<String> = args.iter().map(|a| js_to_display(a, ctx)).collect();
+    let line = format!("[warn] {}", parts.join(" "));
+    with_state(ctx, |s| s.logs.push(line));
+    Ok(JsValue::undefined())
+}
+
 fn bru_env_get(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
-    let name = args.get_or_undefined(0).to_string(ctx)?.to_std_string_escaped();
+    let name = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
     let value = with_state(ctx, |s| {
         s.env_updates
             .get(&name)
@@ -418,8 +511,14 @@ fn bru_env_get(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult
 }
 
 fn bru_env_set(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
-    let name = args.get_or_undefined(0).to_string(ctx)?.to_std_string_escaped();
-    let value = args.get_or_undefined(1).to_string(ctx)?.to_std_string_escaped();
+    let name = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
+    let value = args
+        .get_or_undefined(1)
+        .to_string(ctx)?
+        .to_std_string_escaped();
     with_state(ctx, |s| {
         s.env_updates.insert(name, value);
     });
@@ -432,7 +531,10 @@ fn bru_req_get_url(_this: &JsValue, _args: &[JsValue], ctx: &mut Context) -> JsR
 }
 
 fn bru_req_set_url(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
-    let url = args.get_or_undefined(0).to_string(ctx)?.to_std_string_escaped();
+    let url = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
     with_state(ctx, |s| s.request.url = url);
     Ok(JsValue::undefined())
 }
@@ -453,8 +555,14 @@ fn bru_req_set_method(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> J
 }
 
 fn bru_req_set_header(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
-    let name = args.get_or_undefined(0).to_string(ctx)?.to_std_string_escaped();
-    let value = args.get_or_undefined(1).to_string(ctx)?.to_std_string_escaped();
+    let name = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
+    let value = args
+        .get_or_undefined(1)
+        .to_string(ctx)?
+        .to_std_string_escaped();
     with_state(ctx, |s| {
         let target = name.to_lowercase();
         if let Some(existing) = s
@@ -487,7 +595,11 @@ fn bru_req_get_header(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> J
     Ok(val.map_or(JsValue::undefined(), |v| JsValue::String(JsString::from(v))))
 }
 
-fn bru_req_remove_header(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+fn bru_req_remove_header(
+    _this: &JsValue,
+    args: &[JsValue],
+    ctx: &mut Context,
+) -> JsResult<JsValue> {
     let name = args
         .get_or_undefined(0)
         .to_string(ctx)?
@@ -497,6 +609,182 @@ fn bru_req_remove_header(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -
         s.request.headers.retain(|h| h.name.to_lowercase() != name);
     });
     Ok(JsValue::undefined())
+}
+
+/// `bru.req.getBody()` returns a tagged plain object the script can
+/// inspect: `{ kind: 'json', value }`, `{ kind: 'text', content,
+/// contentType }`, `{ kind: 'form_url_encoded', fields: [{name, value}] }`,
+/// or `null` for "no body".
+fn bru_req_get_body(_this: &JsValue, _args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let body = with_state(ctx, |s| s.request.body.clone());
+    match body {
+        None => Ok(JsValue::null()),
+        Some(b) => {
+            // Round-trip via serde_json so we don't have to hand-build
+            // every variant's object — boa's JSON.parse turns it into a
+            // proper JS value.
+            let json = serde_json::to_string(&b).map_err(|e| {
+                JsError::from_opaque(JsValue::from(JsString::from(format!(
+                    "bru.req.getBody serialize: {e}"
+                ))))
+            })?;
+            json_string_to_js_value(&json, ctx)
+        }
+    }
+}
+
+fn bru_req_set_json_body(
+    _this: &JsValue,
+    args: &[JsValue],
+    ctx: &mut Context,
+) -> JsResult<JsValue> {
+    let value = args.get_or_undefined(0).clone();
+    let json_str = stringify_js_value(&value, ctx)?;
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+        JsError::from_opaque(JsValue::from(JsString::from(format!(
+            "bru.req.setJsonBody: {e}"
+        ))))
+    })?;
+    with_state(ctx, |s| {
+        s.request.body = Some(ScriptBody::Json { value: parsed });
+        s.body_modified = true;
+    });
+    Ok(JsValue::undefined())
+}
+
+fn bru_req_set_text_body(
+    _this: &JsValue,
+    args: &[JsValue],
+    ctx: &mut Context,
+) -> JsResult<JsValue> {
+    let content = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
+    let ct_arg = args.get_or_undefined(1);
+    let content_type = if ct_arg.is_undefined() || ct_arg.is_null() {
+        "text/plain".to_string()
+    } else {
+        ct_arg.to_string(ctx)?.to_std_string_escaped()
+    };
+    with_state(ctx, |s| {
+        s.request.body = Some(ScriptBody::Text {
+            content,
+            content_type,
+        });
+        s.body_modified = true;
+    });
+    Ok(JsValue::undefined())
+}
+
+fn bru_req_set_form_body(
+    _this: &JsValue,
+    args: &[JsValue],
+    ctx: &mut Context,
+) -> JsResult<JsValue> {
+    let value = args.get_or_undefined(0).clone();
+    let json_str = stringify_js_value(&value, ctx)?;
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+        JsError::from_opaque(JsValue::from(JsString::from(format!(
+            "bru.req.setFormBody: {e}"
+        ))))
+    })?;
+
+    // Accept either { name: value, ... } or [{ name, value }, ...].
+    let fields = match parsed {
+        serde_json::Value::Object(map) => map
+            .into_iter()
+            .map(|(k, v)| ScriptFormField {
+                name: k,
+                value: json_value_to_string(&v),
+            })
+            .collect(),
+        serde_json::Value::Array(arr) => {
+            let mut out = Vec::with_capacity(arr.len());
+            for entry in arr {
+                let serde_json::Value::Object(m) = entry else {
+                    return Err(JsError::from_opaque(JsValue::from(JsString::from(
+                        "bru.req.setFormBody: array entries must be { name, value }",
+                    ))));
+                };
+                let name = m.get("name").map(json_value_to_string).unwrap_or_default();
+                let value = m.get("value").map(json_value_to_string).unwrap_or_default();
+                out.push(ScriptFormField { name, value });
+            }
+            out
+        }
+        _ => {
+            return Err(JsError::from_opaque(JsValue::from(JsString::from(
+                "bru.req.setFormBody: expected an object or array of { name, value }",
+            ))));
+        }
+    };
+
+    with_state(ctx, |s| {
+        s.request.body = Some(ScriptBody::FormUrlEncoded { fields });
+        s.body_modified = true;
+    });
+    Ok(JsValue::undefined())
+}
+
+fn bru_req_clear_body(_this: &JsValue, _args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    with_state(ctx, |s| {
+        s.request.body = None;
+        s.body_modified = true;
+    });
+    Ok(JsValue::undefined())
+}
+
+fn json_value_to_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
+fn stringify_js_value(value: &JsValue, ctx: &mut Context) -> JsResult<String> {
+    let json = ctx
+        .global_object()
+        .get(js_string!("JSON"), ctx)?
+        .as_object()
+        .cloned()
+        .ok_or_else(|| {
+            JsError::from_opaque(JsValue::from(JsString::from("JSON global missing")))
+        })?;
+    let stringify = json.get(js_string!("stringify"), ctx)?;
+    let stringify = stringify.as_callable().ok_or_else(|| {
+        JsError::from_opaque(JsValue::from(JsString::from(
+            "JSON.stringify is not callable",
+        )))
+    })?;
+    let res = stringify.call(&JsValue::from(json), std::slice::from_ref(value), ctx)?;
+    if res.is_undefined() {
+        return Err(JsError::from_opaque(JsValue::from(JsString::from(
+            "value is not JSON-serialisable (undefined / function)",
+        ))));
+    }
+    Ok(res.to_string(ctx)?.to_std_string_escaped())
+}
+
+fn json_string_to_js_value(json: &str, ctx: &mut Context) -> JsResult<JsValue> {
+    let json_obj = ctx
+        .global_object()
+        .get(js_string!("JSON"), ctx)?
+        .as_object()
+        .cloned()
+        .ok_or_else(|| {
+            JsError::from_opaque(JsValue::from(JsString::from("JSON global missing")))
+        })?;
+    let parse = json_obj.get(js_string!("parse"), ctx)?;
+    let parse = parse.as_callable().ok_or_else(|| {
+        JsError::from_opaque(JsValue::from(JsString::from("JSON.parse is not callable")))
+    })?;
+    parse.call(
+        &JsValue::from(json_obj),
+        &[JsValue::from(JsString::from(json.to_string()))],
+        ctx,
+    )
 }
 
 fn bru_res_status(_this: &JsValue, _args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
@@ -526,9 +814,15 @@ fn bru_res_get_header(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> J
 }
 
 fn bru_record_test(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
-    let name = args.get_or_undefined(0).to_string(ctx)?.to_std_string_escaped();
+    let name = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
     let passed = args.get_or_undefined(1).to_boolean();
-    let message = args.get_or_undefined(2).to_string(ctx)?.to_std_string_escaped();
+    let message = args
+        .get_or_undefined(2)
+        .to_string(ctx)?
+        .to_std_string_escaped();
     with_state(ctx, |s| {
         s.tests.push(TestResult {
             name,
@@ -548,6 +842,7 @@ mod tests {
             method: "GET".into(),
             url: "https://example.com".into(),
             headers: vec![],
+            body: None,
         }
     }
 
@@ -569,7 +864,10 @@ mod tests {
         ";
         let out = run_pre_request(script, req(), env).unwrap();
 
-        assert_eq!(out.env_updates.get("token").map(String::as_str), Some("abc-23"));
+        assert_eq!(
+            out.env_updates.get("token").map(String::as_str),
+            Some("abc-23")
+        );
         assert!(out.logs[0].contains("https://api.example.com"));
     }
 
@@ -611,7 +909,7 @@ mod tests {
 
     #[test]
     fn tests_record_passes_and_fails() {
-        let script = r#"
+        let script = r"
             bru.test('status is 200', () => {
                 bru.expect(bru.res.status).toBe(200);
             });
@@ -621,7 +919,7 @@ mod tests {
             bru.test('intentional failure', () => {
                 bru.expect(1).toBe(2);
             });
-        "#;
+        ";
         let res = json_response(r#"{"greeting":"hello world"}"#, 200);
         let out = run_tests(script, res, HashMap::new()).unwrap();
 
@@ -634,13 +932,13 @@ mod tests {
 
     #[test]
     fn tests_can_use_json_helper() {
-        let script = r#"
+        let script = r"
             const data = bru.res.json();
             bru.test('greeting field', () => {
                 bru.expect(data.greeting).toEqual('hi');
             });
             bru.log('greeting=', data.greeting);
-        "#;
+        ";
         let res = json_response(r#"{"greeting":"hi"}"#, 200);
         let out = run_tests(script, res, HashMap::new()).unwrap();
         assert_eq!(out.tests.len(), 1);
@@ -650,15 +948,199 @@ mod tests {
 
     #[test]
     fn tests_response_header_lookup_is_case_insensitive() {
-        let script = r#"
+        let script = r"
             bru.test('content-type', () => {
                 bru.expect(bru.res.getHeader('CONTENT-TYPE')).toBe('application/json');
             });
-        "#;
-        let res = json_response(r#"{}"#, 200);
+        ";
+        let res = json_response("{}", 200);
         let out = run_tests(script, res, HashMap::new()).unwrap();
         assert_eq!(out.tests.len(), 1);
         assert!(out.tests[0].passed);
+    }
+
+    #[test]
+    fn info_and_warn_lines_are_prefixed() {
+        let script = r"
+            bru.log('plain');
+            bru.info('configuring', 'token');
+            bru.warn('about to skip header', 1);
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        assert_eq!(
+            out.logs,
+            vec![
+                "plain".to_string(),
+                "[info] configuring token".to_string(),
+                "[warn] about to skip header 1".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn fail_inside_test_marks_failure() {
+        let script = r"
+            bru.test('always fails', () => {
+                bru.fail('nope');
+            });
+        ";
+        let res = ScriptResponse {
+            status: 200,
+            body: "{}".into(),
+            headers: vec![],
+        };
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+        assert_eq!(out.tests.len(), 1);
+        assert!(!out.tests[0].passed);
+        assert!(
+            out.tests[0].message.contains("bru.fail: nope"),
+            "unexpected message: {}",
+            out.tests[0].message
+        );
+    }
+
+    #[test]
+    fn fail_at_top_level_surfaces_as_script_error() {
+        let err = run_pre_request(
+            "bru.fail('aborting because env missing')",
+            req(),
+            HashMap::new(),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("bru.fail: aborting because env missing"),
+            "unexpected message: {msg}"
+        );
+    }
+
+    #[test]
+    fn body_round_trip_when_script_does_not_touch() {
+        let mut r = req();
+        r.body = Some(ScriptBody::Json {
+            value: serde_json::json!({"a": 1}),
+        });
+        let out = run_pre_request("bru.log('noop');", r.clone(), HashMap::new()).unwrap();
+        assert!(!out.body_modified);
+        assert_eq!(out.request.body, r.body);
+    }
+
+    #[test]
+    fn set_json_body_replaces() {
+        let script = r"
+            bru.req.setJsonBody({ name: 'Alice', tags: [1, 2] });
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        assert!(out.body_modified);
+        match out.request.body {
+            Some(ScriptBody::Json { value }) => {
+                assert_eq!(value["name"], "Alice");
+                assert_eq!(value["tags"], serde_json::json!([1, 2]));
+            }
+            other => panic!("expected json body, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_text_body_default_content_type_is_text_plain() {
+        let out = run_pre_request("bru.req.setTextBody('hello');", req(), HashMap::new()).unwrap();
+        assert!(out.body_modified);
+        match out.request.body {
+            Some(ScriptBody::Text {
+                content,
+                content_type,
+            }) => {
+                assert_eq!(content, "hello");
+                assert_eq!(content_type, "text/plain");
+            }
+            other => panic!("expected text body, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn set_text_body_explicit_content_type() {
+        let out = run_pre_request(
+            "bru.req.setTextBody('<x/>', 'application/xml');",
+            req(),
+            HashMap::new(),
+        )
+        .unwrap();
+        match out.request.body {
+            Some(ScriptBody::Text { content_type, .. }) => {
+                assert_eq!(content_type, "application/xml");
+            }
+            _ => panic!("expected text body"),
+        }
+    }
+
+    #[test]
+    fn set_form_body_from_object() {
+        let script = r"
+            bru.req.setFormBody({ a: '1', b: 'two' });
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        match out.request.body {
+            Some(ScriptBody::FormUrlEncoded { fields }) => {
+                let map: HashMap<_, _> = fields.into_iter().map(|f| (f.name, f.value)).collect();
+                assert_eq!(map.get("a").map(String::as_str), Some("1"));
+                assert_eq!(map.get("b").map(String::as_str), Some("two"));
+            }
+            _ => panic!("expected form body"),
+        }
+    }
+
+    #[test]
+    fn set_form_body_from_array() {
+        let script = r"
+            bru.req.setFormBody([{ name: 'tag', value: 'a' }, { name: 'tag', value: 'b' }]);
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        match out.request.body {
+            Some(ScriptBody::FormUrlEncoded { fields }) => {
+                assert_eq!(fields.len(), 2);
+                assert_eq!(fields[0].name, "tag");
+                assert_eq!(fields[0].value, "a");
+                assert_eq!(fields[1].value, "b");
+            }
+            _ => panic!("expected form body"),
+        }
+    }
+
+    #[test]
+    fn clear_body_marks_modified() {
+        let mut r = req();
+        r.body = Some(ScriptBody::Text {
+            content: "x".into(),
+            content_type: "text/plain".into(),
+        });
+        let out = run_pre_request("bru.req.clearBody();", r, HashMap::new()).unwrap();
+        assert!(out.body_modified);
+        assert!(out.request.body.is_none());
+    }
+
+    #[test]
+    fn get_body_exposes_kind_and_value() {
+        let mut r = req();
+        r.body = Some(ScriptBody::Json {
+            value: serde_json::json!({"x": 7}),
+        });
+        let script = r"
+            const b = bru.req.getBody();
+            bru.log('kind=' + b.kind + ' x=' + b.value.x);
+        ";
+        let out = run_pre_request(script, r, HashMap::new()).unwrap();
+        assert_eq!(out.logs, vec!["kind=json x=7".to_string()]);
+        // Just reading shouldn't mark the body as modified.
+        assert!(!out.body_modified);
+    }
+
+    #[test]
+    fn get_body_returns_null_for_no_body() {
+        let script = r"
+            bru.log(String(bru.req.getBody()));
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        assert_eq!(out.logs, vec!["null".to_string()]);
     }
 
     #[test]
