@@ -31,6 +31,8 @@ export default [
         atob: 'readonly',
         TextDecoder: 'readonly',
         TextEncoder: 'readonly',
+        alert: 'readonly',
+        confirm: 'readonly',
       },
     },
     plugins: {

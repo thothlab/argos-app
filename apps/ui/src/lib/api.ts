@@ -13,6 +13,7 @@
 import { invokeCommand } from './tauri';
 
 import type { HttpRequest, HttpResponse } from '../types/http';
+import type { RecentEntry, RequestDraft, Workspace } from '../types/workspace';
 
 export async function coreVersion(): Promise<string> {
   return invokeCommand<string>('core_version');
@@ -35,4 +36,36 @@ export async function sendRequest(req: HttpRequest): Promise<HttpResponse> {
 /** Render the request as a multi-line `curl` invocation. */
 export async function requestToCurl(req: HttpRequest): Promise<string> {
   return invokeCommand<string>('request_to_curl', { req });
+}
+
+// ---- workspace ----------------------------------------------------------
+
+export async function workspaceOpen(path: string): Promise<Workspace> {
+  return invokeCommand<Workspace>('workspace_open', { path });
+}
+
+export async function workspaceCreate(path: string, name: string): Promise<Workspace> {
+  return invokeCommand<Workspace>('workspace_create', { path, name });
+}
+
+export async function workspaceReload(path: string): Promise<Workspace> {
+  return invokeCommand<Workspace>('workspace_reload', { path });
+}
+
+export async function workspaceListRecent(): Promise<RecentEntry[]> {
+  return invokeCommand<RecentEntry[]>('workspace_list_recent');
+}
+
+export async function workspaceClearRecent(): Promise<void> {
+  return invokeCommand<void>('workspace_clear_recent');
+}
+
+/** Persist a request draft to its YAML file on disk. */
+export async function requestSave(path: string, draft: RequestDraft): Promise<void> {
+  return invokeCommand<void>('request_save', { path, draft });
+}
+
+/** Slugify a human request name to a filesystem-safe filename. */
+export async function slug(name: string): Promise<string> {
+  return invokeCommand<string>('slug', { name });
 }

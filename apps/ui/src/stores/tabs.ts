@@ -3,54 +3,47 @@
  *
  * Each tab is a UI handle to a request being edited. The actual request
  * payload (method, URL, headers, body, response) lives in `stores/request.ts`
- * keyed by tab id — this keeps the tab strip light (just title + flags) and
- * avoids the temptation to duplicate state.
+ * keyed by tab id.
  *
- * For T1.3 the seed tabs hold mock metadata so the shell has something to
- * render. Real workspace-backed tabs land in E2.
+ * Tabs that came from a workspace tree carry the absolute YAML `path` of
+ * their backing file. Tabs created via `+` start unsaved (`path: null`)
+ * and resolve to a real path when the user picks one through Save As (T2.5
+ * follow-up).
  */
 
 import { createSignal } from 'solid-js';
 import { nanoid } from 'nanoid';
 
-import { dropTabState, initTabState } from './request';
+import { dropTabState, getRequest, initTabState, patchRequest, type DraftRequest } from './request';
 import { clearRuns } from './runs';
 import type { HttpMethod } from '../types/http';
+import type { RequestDraft } from '../types/workspace';
 
 export type Tab = {
   /** Stable identifier, persisted across reorders. */
   id: string;
   /** Display name (request name from the workspace file). */
   title: string;
+  /** Absolute path of the backing YAML file. `null` for unsaved tabs. */
+  path: string | null;
   /** True if the tab is pinned (survives "Close all unpinned"). */
   pinned: boolean;
   /** True if the tab has unsaved local edits. */
   dirty: boolean;
 };
 
-function makeTab(partial: { title: string; pinned?: boolean }): Tab {
+function makeTab(partial: { title: string; path?: string | null; pinned?: boolean }): Tab {
   return {
     id: nanoid(8),
     title: partial.title,
+    path: partial.path ?? null,
     pinned: partial.pinned ?? false,
     dirty: false,
   };
 }
 
-// Seed tabs — initialised together with their request state so the method
-// badge in the tab strip and the URL bar share one source of truth.
-const SEEDED: Array<{ tab: Tab; method: HttpMethod }> = [
-  { tab: makeTab({ title: 'List users' }), method: 'GET' },
-  { tab: makeTab({ title: 'Create user' }), method: 'POST' },
-];
-for (const { tab, method } of SEEDED) {
-  initTabState(tab.id, { method });
-}
-
-const SEED: Tab[] = SEEDED.map(({ tab }) => tab);
-
-const [tabs, setTabs] = createSignal<Tab[]>(SEED);
-const [activeTabId, setActiveTabId] = createSignal<string | null>(SEED[0]?.id ?? null);
+const [tabs, setTabs] = createSignal<Tab[]>([]);
+const [activeTabId, setActiveTabId] = createSignal<string | null>(null);
 
 export { tabs, activeTabId };
 
@@ -82,8 +75,29 @@ export function closeTab(id: string): void {
   }
 }
 
+export function closeAllTabs(): void {
+  for (const t of tabs()) {
+    dropTabState(t.id);
+    clearRuns(t.id);
+  }
+  setTabs([]);
+  setActiveTabId(null);
+}
+
 export function togglePin(id: string): void {
   setTabs((list) => list.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
+}
+
+export function markDirty(id: string, dirty: boolean): void {
+  setTabs((list) => list.map((t) => (t.id === id ? { ...t, dirty } : t)));
+}
+
+export function setTabPath(id: string, path: string): void {
+  setTabs((list) => list.map((t) => (t.id === id ? { ...t, path } : t)));
+}
+
+export function setTabTitle(id: string, title: string): void {
+  setTabs((list) => list.map((t) => (t.id === id ? { ...t, title } : t)));
 }
 
 export function openNewTab(template?: { title?: string; method?: HttpMethod }): void {
@@ -92,6 +106,58 @@ export function openNewTab(template?: { title?: string; method?: HttpMethod }): 
     pinned: false,
   });
   initTabState(tab.id, { method: template?.method ?? 'GET' });
+  setTabs((list) => [...list, tab]);
+  setActiveTabId(tab.id);
+}
+
+/**
+ * Open a tab for the given request file, or focus it if already open.
+ *
+ * Hydrates the request store from the on-disk draft so the editor shows
+ * the persisted state. Subsequent edits stay in-memory until the user
+ * saves (T2.5).
+ */
+export function openOrFocusTabForRequest(path: string, draft: RequestDraft): void {
+  const existing = tabs().find((t) => t.path === path);
+  if (existing) {
+    setActiveTabId(existing.id);
+    return;
+  }
+  const tab = makeTab({ title: draft.name, path });
+
+  // Initial draft → store. We map the on-disk draft to our editor draft.
+  initTabState(tab.id);
+
+  // Pull values out of the on-disk RestRequest into the editor draft via
+  // patchRequest (we already have the tab state, ensure() is a no-op now).
+  patchRequest(tab.id, (r) => {
+    if (draft.type !== 'rest') return;
+    r.method = draft.method;
+    r.url = draft.url;
+    r.headers = draft.headers.map((h) => ({ name: h.name, value: h.value, enabled: h.enabled }));
+    r.query = draft.query.map((q) => ({ name: q.name, value: q.value, enabled: q.enabled }));
+    if (!draft.body) {
+      r.bodyKind = 'none';
+      r.bodyText = '';
+      return;
+    }
+    if (draft.body.kind === 'json') {
+      r.bodyKind = 'json';
+      r.bodyContentType = 'application/json';
+      r.bodyText = JSON.stringify(draft.body.value, null, 2);
+    } else if (draft.body.kind === 'text') {
+      r.bodyKind = 'text';
+      r.bodyContentType = draft.body.content_type;
+      r.bodyText = draft.body.content;
+    } else if (draft.body.kind === 'form_url_encoded') {
+      r.bodyKind = 'form';
+      r.bodyContentType = 'application/x-www-form-urlencoded';
+      r.bodyText = draft.body.fields
+        .map((f) => `${encodeURIComponent(f.name)}=${encodeURIComponent(f.value)}`)
+        .join('&');
+    }
+  });
+
   setTabs((list) => [...list, tab]);
   setActiveTabId(tab.id);
 }
@@ -106,4 +172,62 @@ export function moveTab(id: string, toIndex: number): void {
   const [moved] = reordered.splice(from, 1);
   reordered.splice(target, 0, moved!);
   setTabs(reordered);
+}
+
+/**
+ * Build a `RequestDraft` (YAML wire shape) from the active editor draft.
+ *
+ * Used by the save flow. Returns `null` if the tab id has no request state.
+ */
+export function tabAsDraft(tabId: string): RequestDraft | null {
+  const r = getRequest(tabId);
+  const t = tabs().find((x) => x.id === tabId);
+  if (!r || !t) return null;
+  return {
+    kind: 'request',
+    name: t.title,
+    description: null,
+    type: 'rest',
+    method: r.method,
+    url: r.url,
+    headers: r.headers
+      .filter((h) => h.name.length > 0)
+      .map((h) => ({ name: h.name, value: h.value, enabled: h.enabled })),
+    query: r.query
+      .filter((q) => q.name.length > 0)
+      .map((q) => ({ name: q.name, value: q.value, enabled: q.enabled })),
+    auth: null,
+    body: buildBody(r),
+    scripts: { pre_request: null, tests: null },
+    schema_ref: null,
+  };
+}
+
+function buildBody(r: DraftRequest | null): RequestDraft['body'] {
+  if (!r) return null;
+  if (r.bodyKind === 'none' || !r.bodyText) return null;
+  if (r.bodyKind === 'json') {
+    try {
+      return { kind: 'json', value: JSON.parse(r.bodyText) };
+    } catch {
+      return { kind: 'text', content: r.bodyText, content_type: r.bodyContentType };
+    }
+  }
+  if (r.bodyKind === 'form') {
+    const fields = r.bodyText
+      .split('&')
+      .filter(Boolean)
+      .map((pair) => {
+        const eq = pair.indexOf('=');
+        const name = eq < 0 ? pair : pair.slice(0, eq);
+        const value = eq < 0 ? '' : pair.slice(eq + 1);
+        try {
+          return { name: decodeURIComponent(name), value: decodeURIComponent(value), enabled: true };
+        } catch {
+          return { name, value, enabled: true };
+        }
+      });
+    return { kind: 'form_url_encoded', fields };
+  }
+  return { kind: 'text', content: r.bodyText, content_type: r.bodyContentType };
 }
