@@ -45,6 +45,7 @@ mime = "0.3"
 
 # Test utilities (only used as dev-dependencies)
 httpmock = "0.7"
+tempfile = "3"
 
 # Internal crates
 argos-core = { path = "crates/core", version = "0.1.0" }

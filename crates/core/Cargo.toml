@@ -31,3 +31,4 @@ mime = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
 httpmock = { workspace = true }
 anyhow = { workspace = true }
+tempfile = { workspace = true }

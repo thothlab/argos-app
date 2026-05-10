@@ -11,7 +11,10 @@ use serde_json::json;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
-    println!("=== argos-core v{} — HTTP engine smoke test ===\n", argos_core::VERSION);
+    println!(
+        "=== argos-core v{} — HTTP engine smoke test ===\n",
+        argos_core::VERSION
+    );
 
     // ---- 1. Live GET with query + header ----
     let client = HttpClient::new()?;
@@ -43,7 +46,10 @@ async fn main() -> anyhow::Result<()> {
             println!("TTFB:         {} ms", resp.timing.ttfb_ms.unwrap_or(0));
             println!("Download:     {} ms", resp.timing.download_ms.unwrap_or(0));
             println!("Size:         {} bytes", resp.body.size_bytes);
-            println!("Content-Type: {}", resp.body.content_type.as_deref().unwrap_or("?"));
+            println!(
+                "Content-Type: {}",
+                resp.body.content_type.as_deref().unwrap_or("?")
+            );
             println!("Headers:      {} entries", resp.headers.len());
             if resp.is_success() {
                 println!("✓ Success (2xx)");
@@ -60,7 +66,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Err(e) => {
             println!("✗ Network error: {e}");
-            println!("  (This is fine if you're offline — the unit tests use a local mock server.)");
+            println!(
+                "  (This is fine if you're offline — the unit tests use a local mock server.)"
+            );
         }
     }
 
