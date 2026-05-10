@@ -27,6 +27,10 @@ export default [
         PointerEvent: 'readonly',
         DragEvent: 'readonly',
         Element: 'readonly',
+        btoa: 'readonly',
+        atob: 'readonly',
+        TextDecoder: 'readonly',
+        TextEncoder: 'readonly',
       },
     },
     plugins: {
