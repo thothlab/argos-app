@@ -5,6 +5,7 @@ members = [
     "crates/cli",
     "crates/core-wasm",
     "crates/desktop/src-tauri",
+    "crates/scripting",
 ]
 
 [workspace.package]
@@ -53,6 +54,7 @@ tempfile = "3"
 
 # Internal crates
 argos-core = { path = "crates/core", version = "0.1.0" }
+argos-scripting = { path = "crates/scripting", version = "0.1.0" }
 
 [profile.release]
 lto = "thin"

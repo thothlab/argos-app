@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use argos_core::codegen::curl;
 use argos_core::format::{slugify, Environment, Folder, RequestDraft};
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
+use argos_scripting::{run_pre_request, ScriptHeader, ScriptRequest};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::sync::OnceCell;
@@ -44,20 +45,80 @@ fn ping() -> &'static str {
 
 // ---- HTTP ----------------------------------------------------------------
 
+/// Outcome of a `send_request` call. The `pre_request_logs` field is
+/// always present (empty array if no script ran), so the UI can render
+/// the script console without branching on whether a script was attached.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SendOutcome {
+    pub response: HttpResponse,
+    pub pre_request_logs: Vec<String>,
+    pub env_updates: HashMap<String, String>,
+}
+
 /// Execute one HTTP request via `argos-core` and return the buffered response.
 ///
 /// `env` carries the active environment's variables (plus secrets) so the
 /// backend can resolve `{{name}}` placeholders before sending. Pass an empty
 /// map for a "no env active" send — placeholders will then be left verbatim.
+///
+/// `pre_request_script` is an optional JS snippet evaluated through the
+/// `argos-scripting` sandbox before the request leaves Argos. It can mutate
+/// `bru.req` and `bru.env`; we apply those mutations here.
 #[tauri::command]
 async fn send_request(
     state: State<'_, AppState>,
     req: HttpRequest,
     env: Option<HashMap<String, String>>,
-) -> Result<HttpResponse, String> {
-    let resolved = resolve_request(req, env.unwrap_or_default());
+    pre_request_script: Option<String>,
+) -> Result<SendOutcome, String> {
+    let mut env = env.unwrap_or_default();
+    let mut pre_request_logs = Vec::new();
+    let mut env_updates = HashMap::new();
+
+    let mut req = req;
+    if let Some(script) = pre_request_script.as_ref().filter(|s| !s.trim().is_empty()) {
+        let script_req = ScriptRequest {
+            method: req.method.as_str().to_string(),
+            url: req.url.clone(),
+            headers: req
+                .headers
+                .iter()
+                .map(|h| ScriptHeader {
+                    name: h.name.clone(),
+                    value: h.value.clone(),
+                })
+                .collect(),
+        };
+        let outcome = run_pre_request(script, script_req, env.clone()).map_err(|e| e.to_string())?;
+        pre_request_logs = outcome.logs;
+        env_updates = outcome.env_updates;
+
+        // Apply mutations.
+        if let Some(method) = parse_http_method(&outcome.request.method) {
+            req.method = method;
+        }
+        req.url = outcome.request.url;
+        req.headers = outcome
+            .request
+            .headers
+            .into_iter()
+            .map(|h| argos_core::HttpHeader::new(h.name, h.value))
+            .collect();
+
+        // Env updates feed into the resolver, but we don't persist them.
+        for (k, v) in &env_updates {
+            env.insert(k.clone(), v.clone());
+        }
+    }
+
+    let resolved = resolve_request(req, env);
     let client = http_client(&state).await?;
-    client.execute(&resolved).await.map_err(|e| e.to_string())
+    let response = client.execute(&resolved).await.map_err(|e| e.to_string())?;
+    Ok(SendOutcome {
+        response,
+        pre_request_logs,
+        env_updates,
+    })
 }
 
 /// Render the request as a `curl` invocation. Resolves `{{var}}` first using
@@ -66,6 +127,19 @@ async fn send_request(
 fn request_to_curl(req: HttpRequest, env: Option<HashMap<String, String>>) -> String {
     let resolved = resolve_request(req, env.unwrap_or_default());
     curl::to_curl(&resolved)
+}
+
+fn parse_http_method(s: &str) -> Option<HttpMethod> {
+    match s.to_ascii_uppercase().as_str() {
+        "GET" => Some(HttpMethod::Get),
+        "POST" => Some(HttpMethod::Post),
+        "PUT" => Some(HttpMethod::Put),
+        "PATCH" => Some(HttpMethod::Patch),
+        "DELETE" => Some(HttpMethod::Delete),
+        "HEAD" => Some(HttpMethod::Head),
+        "OPTIONS" => Some(HttpMethod::Options),
+        _ => None,
+    }
 }
 
 /// Apply variable substitution to a request's URL, headers, query and body.
