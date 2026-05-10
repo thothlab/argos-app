@@ -29,6 +29,7 @@ import { activeEnvName, setActiveEnvName } from '../stores/active-env';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { closeAllTabs } from '../stores/tabs';
 import {
+  brunoImport,
   insomniaImport,
   postmanExport,
   postmanImport,
@@ -109,6 +110,12 @@ function CurlImportControl() {
             >
               <span>From Insomnia v4 (JSON)…</span>
             </DropdownMenu.Item>
+            <DropdownMenu.Item
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              onSelect={() => void importBrunoFlow()}
+            >
+              <span>From Bruno collection (folder)…</span>
+            </DropdownMenu.Item>
             <div class="my-1 h-px bg-border" />
             <DropdownMenu.Item
               class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
@@ -138,6 +145,34 @@ async function importInsomniaFlow(): Promise<void> {
     pickerExtensions: ['json'],
     importer: insomniaImport,
   });
+}
+
+async function importBrunoFlow(): Promise<void> {
+  const ws = workspace();
+  if (!ws) {
+    window.alert('Open a workspace first.');
+    return;
+  }
+  let picked: string | string[] | null = null;
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    picked = await open({ directory: true, multiple: false });
+  } catch (e) {
+    window.alert(`Could not open folder picker: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (!picked || Array.isArray(picked)) return;
+  try {
+    const report = await brunoImport(ws.root, picked);
+    const env = report.env_path ? `, ${report.variables_count} variables → env file` : '';
+    window.alert(
+      `Imported ${report.requests_created} requests in ${report.folders_created} folders${env}.`,
+    );
+    const refreshed = await workspaceReload(ws.root);
+    setWorkspace(refreshed);
+  } catch (e) {
+    window.alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 type ImporterFn = (

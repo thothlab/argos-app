@@ -116,6 +116,18 @@ export async function insomniaImport(
   });
 }
 
+/** Import a Bruno collection directory. `source` is the path to the
+ *  collection root (the folder containing `bruno.json`). */
+export async function brunoImport(
+  workspaceRoot: string,
+  source: string,
+): Promise<PostmanImportReport> {
+  return invokeCommand<PostmanImportReport>('bruno_import', {
+    workspaceRoot,
+    source,
+  });
+}
+
 /** Export the active workspace as a Postman v2.1 collection JSON.
  *  Returns the absolute path of the written file. */
 export async function postmanExport(

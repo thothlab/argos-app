@@ -12,6 +12,7 @@ use argos_core::codegen::curl;
 use argos_core::codegen::curl::from_curl;
 use argos_core::exports::{har, postman as postman_export};
 use argos_core::format::{slugify, EnvVar, Environment, Folder, RequestDraft};
+use argos_core::imports::bruno;
 use argos_core::imports::insomnia;
 use argos_core::imports::postman;
 use argos_core::imports::ImportItem;
@@ -284,6 +285,18 @@ fn postman_import(
 ) -> Result<PostmanImportReport, String> {
     let json = read_inline_or_path(&source, inline.unwrap_or(false))?;
     let collection = postman::from_json(&json).map_err(|e| e.to_string())?;
+    materialise_import(&workspace_root, collection)
+}
+
+/// Import a Bruno collection directory.
+///
+/// `source` is the absolute path of the Bruno collection root (the
+/// folder containing `bruno.json`). The walker reads each `.bru` file,
+/// rebuilds the folder tree, and materialises the result through the
+/// same path Postman / Insomnia imports use.
+#[tauri::command]
+fn bruno_import(workspace_root: String, source: String) -> Result<PostmanImportReport, String> {
+    let collection = bruno::from_dir(Path::new(&source)).map_err(|e| e.to_string())?;
     materialise_import(&workspace_root, collection)
 }
 
@@ -968,6 +981,7 @@ fn main() {
             postman_import,
             postman_export,
             insomnia_import,
+            bruno_import,
             run_export_har,
             workspace_open,
             workspace_create,
