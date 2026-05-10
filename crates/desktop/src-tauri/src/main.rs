@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use argos_core::codegen::curl;
-use argos_core::format::{slugify, Folder, RequestDraft};
+use argos_core::format::{slugify, Environment, Folder, RequestDraft};
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
@@ -170,6 +170,40 @@ fn workspace_reload(path: String) -> Result<Workspace, String> {
 #[tauri::command]
 fn request_save(path: String, draft: RequestDraft) -> Result<(), String> {
     draft.save(Path::new(&path)).map_err(|e| e.to_string())
+}
+
+/// Persist an environment file at `path`.
+#[tauri::command]
+fn environment_save(path: String, env: Environment) -> Result<(), String> {
+    env.save(Path::new(&path)).map_err(|e| e.to_string())
+}
+
+/// Create a new environment file under the workspace's environments dir.
+/// Returns the absolute path of the new file.
+#[tauri::command]
+fn environment_create(env_dir: String, name: String) -> Result<String, String> {
+    let dir = Path::new(&env_dir);
+    if !dir.is_dir() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let slug = slugify(&name);
+    let path = dir.join(format!("{slug}.env.argos.yaml"));
+    if path.exists() {
+        return Err(format!("already exists: {}", path.display()));
+    }
+    let env = Environment::new(&name);
+    env.save(&path).map_err(|e| e.to_string())?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Delete an environment file at `path`.
+#[tauri::command]
+fn environment_delete(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Ok(());
+    }
+    std::fs::remove_file(p).map_err(|e| e.to_string())
 }
 
 /// Compute a filesystem-friendly slug from a human request name.
@@ -406,6 +440,9 @@ fn main() {
             workspace_list_recent,
             workspace_clear_recent,
             request_save,
+            environment_save,
+            environment_create,
+            environment_delete,
             slug,
             tree_create_folder,
             tree_create_request,

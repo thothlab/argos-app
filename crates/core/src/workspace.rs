@@ -34,7 +34,16 @@ pub struct Workspace {
     pub root: PathBuf,
     pub manifest: WorkspaceManifest,
     pub tree: TreeNode,
-    pub environments: Vec<Environment>,
+    pub environments: Vec<EnvironmentEntry>,
+}
+
+/// On-disk environment file paired with its absolute path so the UI can
+/// save edits back without recomputing the slug.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvironmentEntry {
+    pub path: PathBuf,
+    #[serde(flatten)]
+    pub env: Environment,
 }
 
 /// A node in the collection tree. Folders contain other nodes; requests are
@@ -186,7 +195,7 @@ fn scan_folder(dir: &Path, fallback_name: &str) -> Result<TreeNode, FormatError>
     })
 }
 
-fn load_environments(dir: &Path) -> Result<Vec<Environment>, FormatError> {
+fn load_environments(dir: &Path) -> Result<Vec<EnvironmentEntry>, FormatError> {
     let mut out = Vec::new();
     let entries = std::fs::read_dir(dir).map_err(|e| FormatError::io(dir, e))?;
     let mut paths: Vec<_> = entries
@@ -196,7 +205,8 @@ fn load_environments(dir: &Path) -> Result<Vec<Environment>, FormatError> {
         .collect();
     paths.sort();
     for p in paths {
-        out.push(Environment::load(&p)?);
+        let env = Environment::load(&p)?;
+        out.push(EnvironmentEntry { path: p, env });
     }
     Ok(out)
 }
@@ -297,7 +307,8 @@ mod tests {
 
         let ws = Workspace::open(&ws.root).unwrap();
         assert_eq!(ws.environments.len(), 1);
-        assert_eq!(ws.environments[0].name, "local");
+        assert_eq!(ws.environments[0].env.name, "local");
+        assert!(ws.environments[0].path.ends_with("local.env.argos.yaml"));
     }
 
     #[test]

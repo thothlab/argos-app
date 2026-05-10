@@ -5,7 +5,7 @@
  * For T1.2 the elements are visible-but-inert so the layout reads correctly.
  */
 
-import { Show } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 
 import {
   ChevronDown,
@@ -16,6 +16,7 @@ import {
   PanelBottom,
   PanelLeft,
   Search,
+  Settings2,
   Sun,
 } from 'lucide-solid';
 import { DropdownMenu } from '@kobalte/core/dropdown-menu';
@@ -28,6 +29,7 @@ import { setWorkspace, workspace } from '../stores/workspace';
 import { closeAllTabs } from '../stores/tabs';
 import { workspaceClose } from '../lib/api';
 import { label } from '../lib/hotkeys';
+import EnvironmentEditor from './EnvironmentEditor';
 
 export default function TopBar() {
   return (
@@ -55,7 +57,7 @@ export default function TopBar() {
       <div class="mx-1 h-5 w-px bg-border" />
 
       <WorkspacePicker />
-      <EnvironmentPicker />
+      <EnvironmentControls />
 
       <div class="flex-1" />
 
@@ -106,6 +108,26 @@ function WorkspacePicker() {
 }
 
 const NO_ENV = '__no_env__';
+
+function EnvironmentControls() {
+  const [editorOpen, setEditorOpen] = createSignal(false);
+  return (
+    <>
+      <EnvironmentPicker />
+      <Show when={workspace()}>
+        <button
+          type="button"
+          class="rounded-md p-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+          title="Manage environments"
+          onClick={() => setEditorOpen(true)}
+        >
+          <Settings2 size={14} />
+        </button>
+      </Show>
+      <EnvironmentEditor open={editorOpen()} onOpenChange={setEditorOpen} />
+    </>
+  );
+}
 
 function EnvironmentPicker() {
   const ws = workspace;
