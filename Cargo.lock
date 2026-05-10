@@ -110,6 +110,7 @@ dependencies = [
  "anyhow",
  "argos-core",
  "clap",
+ "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
