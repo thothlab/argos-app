@@ -6,9 +6,9 @@
  * E3 alongside variable substitution.
  */
 
-import { Loader2, Send } from 'lucide-solid';
+import { Copy, Loader2, Send } from 'lucide-solid';
 
-import { sendRequest } from '../lib/api';
+import { requestToCurl, sendRequest } from '../lib/api';
 import { bind, label } from '../lib/hotkeys';
 import { applyFolderInheritance, findAncestors } from '../lib/inherit';
 import { activeEnvVars } from '../stores/active-env';
@@ -134,6 +134,33 @@ export default function UrlBar() {
         {isLoading() ? <Loader2 size={14} class="animate-spin" /> : <Send size={14} />}
         <span class="text-[13px]">{isLoading() ? 'Sending…' : 'Send'}</span>
       </button>
+
+      <button
+        type="button"
+        class="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary disabled:opacity-50"
+        disabled={!tabId()}
+        title="Copy as cURL"
+        onClick={() => void copyAsCurl()}
+      >
+        <Copy size={14} />
+      </button>
     </div>
   );
+
+  async function copyAsCurl(): Promise<void> {
+    const id = tabId();
+    if (!id) return;
+    const d = draft();
+    if (!d) return;
+    const tab = activeTab();
+    const ancestors = tab?.path ? findAncestors(tab.path, workspace()?.tree ?? null) : [];
+    const merged = applyFolderInheritance(d, ancestors);
+    const wire = toWireRequest(merged);
+    try {
+      const cmd = await requestToCurl(wire, activeEnvVars());
+      await navigator.clipboard.writeText(cmd);
+    } catch (e) {
+      window.alert(`Could not copy: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }

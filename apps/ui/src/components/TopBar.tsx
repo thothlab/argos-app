@@ -28,7 +28,7 @@ import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { activeEnvName, setActiveEnvName } from '../stores/active-env';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { closeAllTabs } from '../stores/tabs';
-import { postmanImport, workspaceClose, workspaceReload } from '../lib/api';
+import { postmanExport, postmanImport, workspaceClose, workspaceReload } from '../lib/api';
 import { label } from '../lib/hotkeys';
 import CurlImportModal from './CurlImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
@@ -97,6 +97,13 @@ function CurlImportControl() {
             >
               <span>From Postman v2.1 (JSON)…</span>
             </DropdownMenu.Item>
+            <div class="my-1 h-px bg-border" />
+            <DropdownMenu.Item
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              onSelect={() => void exportPostmanFlow()}
+            >
+              <span>Export collection as Postman v2.1…</span>
+            </DropdownMenu.Item>
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu>
@@ -125,7 +132,7 @@ async function importPostmanFlow(): Promise<void> {
   if (!picked || Array.isArray(picked)) return;
 
   try {
-    const report = await postmanImport(ws.root, picked, false);
+    const report = await postmanImport(ws.root, picked as string, false);
     const env = report.env_path ? `, ${report.variables_count} variables → env file` : '';
     window.alert(
       `Imported ${report.requests_created} requests in ${report.folders_created} folders${env}.`,
@@ -135,6 +142,33 @@ async function importPostmanFlow(): Promise<void> {
     setWorkspace(refreshed);
   } catch (e) {
     window.alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+async function exportPostmanFlow(): Promise<void> {
+  const ws = workspace();
+  if (!ws) {
+    window.alert('Open a workspace first.');
+    return;
+  }
+  let target: string | null = null;
+  try {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    target = await save({
+      defaultPath: `${ws.manifest.name}.postman_collection.json`,
+      filters: [{ name: 'Postman v2.1 collection', extensions: ['json'] }],
+    });
+  } catch (e) {
+    window.alert(`Could not open file picker: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (!target) return;
+
+  try {
+    const written = await postmanExport(ws.root, target);
+    window.alert(`Exported to ${written}.`);
+  } catch (e) {
+    window.alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
