@@ -28,7 +28,7 @@ import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { activeEnvName, setActiveEnvName } from '../stores/active-env';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { closeAllTabs } from '../stores/tabs';
-import { workspaceClose } from '../lib/api';
+import { postmanImport, workspaceClose, workspaceReload } from '../lib/api';
 import { label } from '../lib/hotkeys';
 import CurlImportModal from './CurlImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
@@ -71,21 +71,71 @@ export default function TopBar() {
 }
 
 function CurlImportControl() {
-  const [open, setOpen] = createSignal(false);
+  const [curlOpen, setCurlOpen] = createSignal(false);
   return (
     <>
-      <button
-        type="button"
-        class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
-        title="Import from cURL"
-        onClick={() => setOpen(true)}
-      >
-        <Download size={14} />
-        <span class="font-mono text-[11px]">cURL</span>
-      </button>
-      <CurlImportModal open={open()} onOpenChange={setOpen} />
+      <DropdownMenu>
+        <DropdownMenu.Trigger
+          class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+          title="Import"
+        >
+          <Download size={14} />
+          <span class="font-mono text-[11px]">Import</span>
+          <ChevronDown size={12} />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content class="z-50 min-w-44 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
+            <DropdownMenu.Item
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              onSelect={() => setCurlOpen(true)}
+            >
+              <span>From cURL…</span>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              onSelect={() => void importPostmanFlow()}
+            >
+              <span>From Postman v2.1 (JSON)…</span>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
+      <CurlImportModal open={curlOpen()} onOpenChange={setCurlOpen} />
     </>
   );
+}
+
+async function importPostmanFlow(): Promise<void> {
+  const ws = workspace();
+  if (!ws) {
+    window.alert('Open a workspace first.');
+    return;
+  }
+  let picked: string | string[] | null = null;
+  try {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    picked = await open({
+      multiple: false,
+      filters: [{ name: 'Postman v2.1 collection', extensions: ['json'] }],
+    });
+  } catch (e) {
+    window.alert(`Could not open file picker: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (!picked || Array.isArray(picked)) return;
+
+  try {
+    const report = await postmanImport(ws.root, picked, false);
+    const env = report.env_path ? `, ${report.variables_count} variables → env file` : '';
+    window.alert(
+      `Imported ${report.requests_created} requests in ${report.folders_created} folders${env}.`,
+    );
+    // Reload the workspace tree from disk so the new folder shows up.
+    const refreshed = await workspaceReload(ws.root);
+    setWorkspace(refreshed);
+  } catch (e) {
+    window.alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 function WorkspacePicker() {

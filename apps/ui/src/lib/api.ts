@@ -77,6 +77,31 @@ export async function curlToRequest(input: string): Promise<HttpRequest> {
   return invokeCommand<HttpRequest>('curl_to_request', { input });
 }
 
+/** Result of a Postman v2.1 import — counts plus paths the UI can use
+ *  to scroll the workspace tree to the freshly created folder / env. */
+export type PostmanImportReport = {
+  folder_path: string;
+  folders_created: number;
+  requests_created: number;
+  variables_count: number;
+  env_path: string | null;
+};
+
+/** Import a Postman v2.1 collection JSON into the active workspace.
+ *  `source` is either a file path (default) or inline JSON when
+ *  `inline = true`. */
+export async function postmanImport(
+  workspaceRoot: string,
+  source: string,
+  inline = false,
+): Promise<PostmanImportReport> {
+  return invokeCommand<PostmanImportReport>('postman_import', {
+    workspaceRoot,
+    source,
+    inline,
+  });
+}
+
 // ---- workspace ----------------------------------------------------------
 
 export async function workspaceOpen(path: string): Promise<Workspace> {
