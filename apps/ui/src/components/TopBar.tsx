@@ -10,6 +10,7 @@ import { Show } from 'solid-js';
 import {
   ChevronDown,
   Command,
+  LogOut,
   Monitor,
   Moon,
   PanelBottom,
@@ -17,12 +18,15 @@ import {
   Search,
   Sun,
 } from 'lucide-solid';
+import { DropdownMenu } from '@kobalte/core/dropdown-menu';
 import { Select } from '@kobalte/core/select';
 
 import { dockVisible, sidebarVisible, toggleDock, toggleSidebar } from '../stores/layout';
 import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { activeEnvName, setActiveEnvName } from '../stores/active-env';
-import { workspace } from '../stores/workspace';
+import { setWorkspace, workspace } from '../stores/workspace';
+import { closeAllTabs } from '../stores/tabs';
+import { workspaceClose } from '../lib/api';
 import { label } from '../lib/hotkeys';
 
 export default function TopBar() {
@@ -63,15 +67,41 @@ export default function TopBar() {
 
 function WorkspacePicker() {
   const ws = workspace;
+
+  async function close() {
+    closeAllTabs();
+    setWorkspace(null);
+    try {
+      await workspaceClose();
+    } catch {
+      // Best-effort — frontend has already left the workspace either way.
+    }
+  }
+
   return (
-    <button
-      type="button"
-      class="flex items-center gap-1.5 rounded-md px-2 py-1 text-fg-primary hover:bg-bg-secondary"
-      title={ws()?.root ?? 'No workspace'}
-    >
-      <span class="font-mono text-[13px]">{ws()?.manifest.name ?? '—'}</span>
-      <ChevronDown size={14} class="text-fg-secondary" />
-    </button>
+    <DropdownMenu>
+      <DropdownMenu.Trigger
+        class="flex items-center gap-1.5 rounded-md px-2 py-1 text-fg-primary hover:bg-bg-secondary"
+        title={ws()?.root ?? 'No workspace'}
+      >
+        <span class="font-mono text-[13px]">{ws()?.manifest.name ?? '—'}</span>
+        <ChevronDown size={14} class="text-fg-secondary" />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content class="z-50 min-w-56 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
+          <div class="border-b border-border px-3 py-2 font-mono text-[10px] text-fg-secondary">
+            <div class="truncate">{ws()?.root}</div>
+          </div>
+          <DropdownMenu.Item
+            class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+            onSelect={close}
+          >
+            <LogOut size={14} class="text-fg-secondary" />
+            <span>Close workspace</span>
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
   );
 }
 
