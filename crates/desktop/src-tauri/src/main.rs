@@ -12,7 +12,8 @@ use argos_core::codegen::curl;
 use argos_core::format::{slugify, Environment, Folder, RequestDraft};
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
 use argos_scripting::{
-    run_pre_request, run_tests, ScriptHeader, ScriptRequest, ScriptResponse, TestResult,
+    run_pre_request, run_tests, ScriptBody, ScriptFormField, ScriptHeader, ScriptRequest,
+    ScriptResponse, TestResult,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
@@ -93,8 +94,10 @@ async fn send_request(
                     value: h.value.clone(),
                 })
                 .collect(),
+            body: http_body_to_script(req.body.as_ref()),
         };
-        let outcome = run_pre_request(script, script_req, env.clone()).map_err(|e| e.to_string())?;
+        let outcome =
+            run_pre_request(script, script_req, env.clone()).map_err(|e| e.to_string())?;
         pre_request_logs = outcome.logs;
         env_updates = outcome.env_updates;
 
@@ -109,6 +112,12 @@ async fn send_request(
             .into_iter()
             .map(|h| argos_core::HttpHeader::new(h.name, h.value))
             .collect();
+
+        // Body: only overwrite if the script actually touched it. Raw
+        // (binary) bodies the script can't represent stay intact this way.
+        if outcome.body_modified {
+            req.body = outcome.request.body.map(script_body_to_http);
+        }
 
         // Env updates feed into the resolver, but we don't persist them.
         for (k, v) in &env_updates {
@@ -158,6 +167,52 @@ async fn send_request(
 fn request_to_curl(req: HttpRequest, env: Option<HashMap<String, String>>) -> String {
     let resolved = resolve_request(req, env.unwrap_or_default());
     curl::to_curl(&resolved)
+}
+
+/// Translate an `argos_core::HttpBody` into a `ScriptBody` for the
+/// scripting sandbox. `Raw` (binary) bodies don't have a JS-friendly
+/// representation, so we hide them by returning `None` — the caller
+/// keeps the original `Raw` body intact unless the script writes a
+/// new one.
+fn http_body_to_script(body: Option<&argos_core::HttpBody>) -> Option<ScriptBody> {
+    match body? {
+        argos_core::HttpBody::Text {
+            content,
+            content_type,
+        } => Some(ScriptBody::Text {
+            content: content.clone(),
+            content_type: content_type.clone(),
+        }),
+        argos_core::HttpBody::Json { value } => Some(ScriptBody::Json {
+            value: value.clone(),
+        }),
+        argos_core::HttpBody::FormUrlEncoded { fields } => Some(ScriptBody::FormUrlEncoded {
+            fields: fields
+                .iter()
+                .map(|(name, value)| ScriptFormField {
+                    name: name.clone(),
+                    value: value.clone(),
+                })
+                .collect(),
+        }),
+        argos_core::HttpBody::Raw { .. } => None,
+    }
+}
+
+fn script_body_to_http(body: ScriptBody) -> argos_core::HttpBody {
+    match body {
+        ScriptBody::Text {
+            content,
+            content_type,
+        } => argos_core::HttpBody::Text {
+            content,
+            content_type,
+        },
+        ScriptBody::Json { value } => argos_core::HttpBody::Json { value },
+        ScriptBody::FormUrlEncoded { fields } => argos_core::HttpBody::FormUrlEncoded {
+            fields: fields.into_iter().map(|f| (f.name, f.value)).collect(),
+        },
+    }
 }
 
 fn parse_http_method(s: &str) -> Option<HttpMethod> {
@@ -382,10 +437,7 @@ fn run_record(
 /// Load up to `RUNS_PER_REQUEST_CAP` persisted runs for a request, newest
 /// first. Missing file → empty array.
 #[tauri::command]
-fn run_load(
-    workspace_root: String,
-    request_path: String,
-) -> Result<Vec<PersistedRun>, String> {
+fn run_load(workspace_root: String, request_path: String) -> Result<Vec<PersistedRun>, String> {
     let ws_root = Path::new(&workspace_root);
     let req_path = Path::new(&request_path);
     let Some(file) = runs_file_for(ws_root, req_path) else {
