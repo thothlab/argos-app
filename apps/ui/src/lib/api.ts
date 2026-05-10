@@ -12,7 +12,7 @@
 
 import { invokeCommand } from './tauri';
 
-import type { HttpRequest, HttpResponse } from '../types/http';
+import type { HttpMethod, HttpRequest, HttpResponse } from '../types/http';
 import type { RecentEntry, RequestDraft, Workspace } from '../types/workspace';
 
 export async function coreVersion(): Promise<string> {
@@ -78,4 +78,30 @@ export async function requestSave(path: string, draft: RequestDraft): Promise<vo
 /** Slugify a human request name to a filesystem-safe filename. */
 export async function slug(name: string): Promise<string> {
   return invokeCommand<string>('slug', { name });
+}
+
+// ---- tree CRUD ----------------------------------------------------------
+
+export async function treeCreateFolder(parentDir: string, name: string): Promise<string> {
+  return invokeCommand<string>('tree_create_folder', { parentDir, name });
+}
+
+export async function treeCreateRequest(
+  parentDir: string,
+  name: string,
+  method: HttpMethod | null = 'GET',
+): Promise<string> {
+  return invokeCommand<string>('tree_create_request', { parentDir, name, method });
+}
+
+export async function treeRename(path: string, newName: string): Promise<string> {
+  return invokeCommand<string>('tree_rename', { path, newName });
+}
+
+export async function treeDelete(path: string): Promise<void> {
+  return invokeCommand<void>('tree_delete', { path });
+}
+
+export async function treeMove(src: string, destDir: string): Promise<string> {
+  return invokeCommand<string>('tree_move', { src, destDir });
 }
