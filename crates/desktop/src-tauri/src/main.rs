@@ -1,18 +1,19 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use argos_core::codegen::curl;
-use argos_core::{HttpClient, HttpRequest, HttpResponse};
-use tauri::State;
+use argos_core::format::{slugify, RequestDraft};
+use argos_core::{HttpClient, HttpRequest, HttpResponse, Workspace};
+use serde::{Deserialize, Serialize};
+use tauri::{Manager, State};
 use tokio::sync::OnceCell;
 
+// ---- shared state --------------------------------------------------------
+
 /// HTTP client built lazily on first use and reused for the lifetime of the app.
-///
-/// reqwest's connection pool benefits from being shared across requests, and
-/// building the client is non-trivial (TLS init, etc.). We hide the OnceCell
-/// behind a Tauri-managed state so commands can `.get()` it.
 type AppState = Arc<OnceCell<HttpClient>>;
 
 async fn http_client(state: &AppState) -> Result<&HttpClient, String> {
@@ -20,6 +21,8 @@ async fn http_client(state: &AppState) -> Result<&HttpClient, String> {
         .get_or_try_init(|| async { HttpClient::new().map_err(|e| e.to_string()) })
         .await
 }
+
+// ---- core / health -------------------------------------------------------
 
 /// Returns the embedded `argos-core` version string.
 #[tauri::command]
@@ -33,10 +36,9 @@ fn ping() -> &'static str {
     "pong"
 }
 
+// ---- HTTP ----------------------------------------------------------------
+
 /// Execute one HTTP request via `argos-core` and return the buffered response.
-///
-/// Errors are stringified for transport across the IPC boundary; the UI maps
-/// them to a friendly error state.
 #[tauri::command]
 async fn send_request(
     state: State<'_, AppState>,
@@ -46,12 +48,135 @@ async fn send_request(
     client.execute(&req).await.map_err(|e| e.to_string())
 }
 
-/// Render the request as a `curl` invocation — useful for the UI's
-/// "Copy as cURL" affordance.
+/// Render the request as a `curl` invocation.
 #[tauri::command]
 fn request_to_curl(req: HttpRequest) -> String {
     curl::to_curl(&req)
 }
+
+// ---- workspace -----------------------------------------------------------
+
+/// Open an existing workspace at `path`. Adds the path to recents on success.
+#[tauri::command]
+fn workspace_open(app: tauri::AppHandle, path: String) -> Result<Workspace, String> {
+    let ws = Workspace::open(&path).map_err(|e| e.to_string())?;
+    let _ = recents_add(&app, &ws.root);
+    Ok(ws)
+}
+
+/// Create a new workspace at `path` with the given display name.
+#[tauri::command]
+fn workspace_create(
+    app: tauri::AppHandle,
+    path: String,
+    name: String,
+) -> Result<Workspace, String> {
+    let ws = Workspace::create(&path, &name).map_err(|e| e.to_string())?;
+    let _ = recents_add(&app, &ws.root);
+    Ok(ws)
+}
+
+/// Re-scan the workspace at `path` (called after external file changes).
+#[tauri::command]
+fn workspace_reload(path: String) -> Result<Workspace, String> {
+    Workspace::open(&path).map_err(|e| e.to_string())
+}
+
+/// Persist a request draft to disk.
+///
+/// `path` is the absolute path to the YAML file the draft should live in. If
+/// the file doesn't exist yet (new request), the parent dir is created
+/// implicitly by the atomic-write helper.
+#[tauri::command]
+fn request_save(path: String, draft: RequestDraft) -> Result<(), String> {
+    draft
+        .save(Path::new(&path))
+        .map_err(|e| e.to_string())
+}
+
+/// Compute a filesystem-friendly slug from a human request name.
+#[tauri::command]
+fn slug(name: String) -> String {
+    slugify(&name)
+}
+
+// ---- recents -------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecentEntry {
+    path: PathBuf,
+    /// Last-opened timestamp (millis since epoch). UI sorts by this.
+    last_opened_ms: u128,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct Recents {
+    entries: Vec<RecentEntry>,
+}
+
+const MAX_RECENTS: usize = 12;
+
+fn recents_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("recents.json"))
+}
+
+fn read_recents(app: &tauri::AppHandle) -> Recents {
+    let Ok(path) = recents_path(app) else {
+        return Recents::default();
+    };
+    let Ok(bytes) = std::fs::read(&path) else {
+        return Recents::default();
+    };
+    serde_json::from_slice(&bytes).unwrap_or_default()
+}
+
+fn write_recents(app: &tauri::AppHandle, r: &Recents) -> Result<(), String> {
+    let path = recents_path(app)?;
+    let body = serde_json::to_vec_pretty(r).map_err(|e| e.to_string())?;
+    std::fs::write(&path, body).map_err(|e| e.to_string())
+}
+
+fn recents_add(app: &tauri::AppHandle, ws_path: &Path) -> Result<(), String> {
+    let abs = ws_path.canonicalize().unwrap_or_else(|_| ws_path.to_path_buf());
+    let mut r = read_recents(app);
+    r.entries.retain(|e| e.path != abs);
+    r.entries.insert(
+        0,
+        RecentEntry {
+            path: abs,
+            last_opened_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0),
+        },
+    );
+    if r.entries.len() > MAX_RECENTS {
+        r.entries.truncate(MAX_RECENTS);
+    }
+    write_recents(app, &r)
+}
+
+#[tauri::command]
+fn workspace_list_recent(app: tauri::AppHandle) -> Vec<RecentEntry> {
+    // Filter out paths that no longer exist so the welcome screen stays clean.
+    read_recents(&app)
+        .entries
+        .into_iter()
+        .filter(|e| e.path.is_dir())
+        .collect()
+}
+
+#[tauri::command]
+fn workspace_clear_recent(app: tauri::AppHandle) -> Result<(), String> {
+    write_recents(&app, &Recents::default())
+}
+
+// ---- entry point ---------------------------------------------------------
 
 fn main() {
     argos_core::init_tracing();
@@ -68,6 +193,13 @@ fn main() {
             ping,
             send_request,
             request_to_curl,
+            workspace_open,
+            workspace_create,
+            workspace_reload,
+            workspace_list_recent,
+            workspace_clear_recent,
+            request_save,
+            slug,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Argos desktop app");

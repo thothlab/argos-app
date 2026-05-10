@@ -84,6 +84,15 @@ export function dropTabState(tabId: string): void {
   setTabStatesRaw(produce((s) => { delete s[tabId]; }));
 }
 
+/**
+ * Mutate the draft via a callback. Useful for atomic updates that touch
+ * several fields at once (e.g. switching body kind clears content).
+ */
+export function patchRequest(tabId: string, fn: (r: DraftRequest) => void): void {
+  if (!tabStates[tabId]) return;
+  setTabStatesRaw(tabId, 'request', produce(fn));
+}
+
 // ---- selectors (pure reads, never mutate) ---------------------------------
 
 export function getRequest(tabId: string): DraftRequest | null {
