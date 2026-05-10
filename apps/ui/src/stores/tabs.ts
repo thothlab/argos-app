@@ -1,55 +1,52 @@
 /**
  * Open-tab management.
  *
- * Tabs are *transient* — they describe what's currently open in the editor,
- * not what's saved on disk. The actual request files live in the workspace
- * (`workspace/collections/...`). A tab references a request by its file id.
+ * Each tab is a UI handle to a request being edited. The actual request
+ * payload (method, URL, headers, body, response) lives in `stores/request.ts`
+ * keyed by tab id — this keeps the tab strip light (just title + flags) and
+ * avoids the temptation to duplicate state.
  *
- * For T1.2 (UI shell) we model the state shape; T1.3 wires it to real
- * request files and Tauri IPC. Until then, tabs hold mock data so the shell
- * has something to render.
+ * For T1.3 the seed tabs hold mock metadata so the shell has something to
+ * render. Real workspace-backed tabs land in E2.
  */
 
 import { createSignal } from 'solid-js';
 import { nanoid } from 'nanoid';
 
-export type HttpMethod =
-  | 'GET'
-  | 'POST'
-  | 'PUT'
-  | 'PATCH'
-  | 'DELETE'
-  | 'HEAD'
-  | 'OPTIONS';
+import { dropTabState, initTabState } from './request';
+import type { HttpMethod } from '../types/http';
 
 export type Tab = {
   /** Stable identifier, persisted across reorders. */
   id: string;
   /** Display name (request name from the workspace file). */
   title: string;
-  /** REST verb — drives the colour-coded badge in the tab. */
-  method: HttpMethod;
   /** True if the tab is pinned (survives "Close all unpinned"). */
   pinned: boolean;
   /** True if the tab has unsaved local edits. */
   dirty: boolean;
 };
 
-function makeTab(partial: Partial<Tab> & { title: string; method: HttpMethod }): Tab {
+function makeTab(partial: { title: string; pinned?: boolean }): Tab {
   return {
     id: nanoid(8),
     title: partial.title,
-    method: partial.method,
     pinned: partial.pinned ?? false,
-    dirty: partial.dirty ?? false,
+    dirty: false,
   };
 }
 
-// Mock data for the empty shell — replaced by a real workspace loader in T1.3.
-const SEED: Tab[] = [
-  makeTab({ title: 'List users', method: 'GET' }),
-  makeTab({ title: 'Create user', method: 'POST' }),
+// Seed tabs — initialised together with their request state so the method
+// badge in the tab strip and the URL bar share one source of truth.
+const SEEDED: Array<{ tab: Tab; method: HttpMethod }> = [
+  { tab: makeTab({ title: 'List users' }), method: 'GET' },
+  { tab: makeTab({ title: 'Create user' }), method: 'POST' },
 ];
+for (const { tab, method } of SEEDED) {
+  initTabState(tab.id, { method });
+}
+
+const SEED: Tab[] = SEEDED.map(({ tab }) => tab);
 
 const [tabs, setTabs] = createSignal<Tab[]>(SEED);
 const [activeTabId, setActiveTabId] = createSignal<string | null>(SEED[0]?.id ?? null);
@@ -75,9 +72,9 @@ export function closeTab(id: string): void {
 
   const next = list.filter((t) => t.id !== id);
   setTabs(next);
+  dropTabState(id);
 
   if (activeTabId() === id) {
-    // Pick a neighbour: prefer the tab to the right, fall back to the left.
     const replacement = next[idx] ?? next[idx - 1] ?? null;
     setActiveTabId(replacement ? replacement.id : null);
   }
@@ -87,15 +84,14 @@ export function togglePin(id: string): void {
   setTabs((list) => list.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
 }
 
-export function openNewTab(template?: Partial<Tab>): void {
-  const t = makeTab({
+export function openNewTab(template?: { title?: string; method?: HttpMethod }): void {
+  const tab = makeTab({
     title: template?.title ?? 'Untitled',
-    method: template?.method ?? 'GET',
-    pinned: template?.pinned,
-    dirty: true,
+    pinned: false,
   });
-  setTabs((list) => [...list, t]);
-  setActiveTabId(t.id);
+  initTabState(tab.id, { method: template?.method ?? 'GET' });
+  setTabs((list) => [...list, tab]);
+  setActiveTabId(tab.id);
 }
 
 export function moveTab(id: string, toIndex: number): void {

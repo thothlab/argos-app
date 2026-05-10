@@ -10,11 +10,18 @@ import {
   tabs,
   togglePin,
 } from './tabs';
+import { getRequest } from './request';
 
 describe('tabs store', () => {
   it('seeds with two demo tabs and the first one active', () => {
     expect(tabs()).toHaveLength(2);
     expect(activeTab()?.title).toBe('List users');
+  });
+
+  it('seed tabs have request state initialised with their method', () => {
+    const list = tabs();
+    expect(getRequest(list[0]!.id)?.method).toBe('GET');
+    expect(getRequest(list[1]!.id)?.method).toBe('POST');
   });
 
   it('selectTab() switches the active tab', () => {
@@ -24,13 +31,13 @@ describe('tabs store', () => {
     expect(activeTab()?.title).toBe('Create user');
   });
 
-  it('openNewTab() appends and activates the new tab', () => {
+  it('openNewTab() appends, activates, and seeds request state', () => {
     const before = tabs().length;
     openNewTab({ title: 'Smoke test', method: 'PUT' });
     expect(tabs()).toHaveLength(before + 1);
     expect(activeTab()?.title).toBe('Smoke test');
-    expect(activeTab()?.method).toBe('PUT');
-    expect(activeTab()?.dirty).toBe(true);
+    const id = activeTabId()!;
+    expect(getRequest(id)?.method).toBe('PUT');
   });
 
   it('togglePin() flips the pinned flag', () => {
@@ -49,14 +56,14 @@ describe('tabs store', () => {
     expect(tabs().at(-1)?.id).toBe(firstId);
   });
 
-  it('closeTab() removes and picks a sensible neighbour', () => {
+  it('closeTab() removes, drops state, and picks a sensible neighbour', () => {
     const before = tabs().length;
     const id = tabs()[0]!.id;
     selectTab(id);
     closeTab(id);
     expect(tabs()).toHaveLength(before - 1);
     expect(tabs().some((t) => t.id === id)).toBe(false);
-    // Active tab moves on to the new tab at index 0 (the previous next neighbour).
+    expect(getRequest(id)).toBeNull();
     expect(activeTabId()).toBe(tabs()[0]?.id);
   });
 });
