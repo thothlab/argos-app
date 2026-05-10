@@ -14,7 +14,9 @@ import {
   setBodyKind,
   setBodyText,
   setHeaders,
+  setPreRequest,
   setQuery,
+  setTests,
   type DraftBodyKind,
 } from '../stores/request';
 
@@ -22,14 +24,14 @@ import AuthTab from './AuthTab';
 import KeyValueTable, { type RowEntry } from './KeyValueTable';
 import UrlBar from './UrlBar';
 
-type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'tests';
+type EditorTab = 'params' | 'headers' | 'body' | 'auth' | 'scripts';
 
 const VISIBLE_TABS: Array<{ id: EditorTab; label: string; disabled?: boolean }> = [
   { id: 'params', label: 'Params' },
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
   { id: 'auth', label: 'Auth' },
-  { id: 'tests', label: 'Tests', disabled: true },
+  { id: 'scripts', label: 'Scripts' },
 ];
 
 export default function RequestEditor() {
@@ -49,6 +51,10 @@ export default function RequestEditor() {
   const hasAuth = () => {
     const a = draft()?.auth;
     return !!a && a.kind !== 'none';
+  };
+  const hasScripts = () => {
+    const d = draft();
+    return !!d && (d.preRequest.trim().length > 0 || d.tests.trim().length > 0);
   };
 
   return (
@@ -83,6 +89,9 @@ export default function RequestEditor() {
               <Show when={t.id === 'auth' && hasAuth()}>
                 <span class="h-1.5 w-1.5 rounded-full bg-primary" aria-label="has auth" />
               </Show>
+              <Show when={t.id === 'scripts' && hasScripts()}>
+                <span class="h-1.5 w-1.5 rounded-full bg-primary" aria-label="has scripts" />
+              </Show>
               <Show when={activeEditorTab() === t.id}>
                 <span class="absolute inset-x-3 -bottom-px h-0.5 bg-primary" aria-hidden />
               </Show>
@@ -104,6 +113,9 @@ export default function RequestEditor() {
           </Match>
           <Match when={activeEditorTab() === 'auth'}>
             <AuthTab />
+          </Match>
+          <Match when={activeEditorTab() === 'scripts'}>
+            <ScriptsTab />
           </Match>
         </Switch>
       </div>
@@ -171,6 +183,64 @@ const BODY_KINDS: Array<{ id: DraftBodyKind; label: string }> = [
   { id: 'json', label: 'JSON' },
   { id: 'form', label: 'Form-urlencoded' },
 ];
+
+function ScriptsTab() {
+  const id = activeTabId;
+  const draft = () => {
+    const tabId = id();
+    return tabId ? getRequest(tabId) : null;
+  };
+  return (
+    <div class="flex h-full flex-col gap-4 p-4">
+      <ScriptBlock
+        title="Pre-request"
+        hint="Runs in the Argos sandbox before the request leaves your machine. Use bru.req.* to mutate the wire request, bru.env.set/get for variables, bru.log(...) for output."
+        value={draft()?.preRequest ?? ''}
+        placeholder={`// Example:\nconst now = new Date().toISOString();\nbru.req.setHeader('X-Sent-At', now);\nbru.env.set('lastRunAt', now);\n`}
+        onInput={(v) => {
+          const tabId = id();
+          if (tabId) setPreRequest(tabId, v);
+        }}
+      />
+      <ScriptBlock
+        title="Tests"
+        hint="Reserved — runs after the response arrives. The bru.test() / bru.expect() API ships in the next chunk."
+        value={draft()?.tests ?? ''}
+        placeholder={`// Coming soon:\n// bru.test('Status is 200', () => bru.expect(bru.res.status).toBe(200));\n`}
+        onInput={(v) => {
+          const tabId = id();
+          if (tabId) setTests(tabId, v);
+        }}
+      />
+    </div>
+  );
+}
+
+function ScriptBlock(props: {
+  title: string;
+  hint: string;
+  value: string;
+  placeholder: string;
+  onInput: (v: string) => void;
+}) {
+  return (
+    <div class="flex min-h-[160px] flex-1 flex-col">
+      <div class="mb-1 flex items-baseline gap-2">
+        <h3 class="text-[13px] font-medium text-fg-primary">{props.title}</h3>
+        <span class="text-[11px] text-fg-secondary">{props.hint}</span>
+      </div>
+      <textarea
+        spellcheck={false}
+        autocomplete="off"
+        autocorrect="off"
+        class="flex-1 resize-none rounded border border-border bg-bg-card p-3 font-mono text-[12px] outline-none focus:border-primary scrollbar-thin"
+        placeholder={props.placeholder}
+        value={props.value}
+        onInput={(e) => props.onInput(e.currentTarget.value)}
+      />
+    </div>
+  );
+}
 
 function BodyTab() {
   const id = activeTabId;

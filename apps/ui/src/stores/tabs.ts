@@ -156,6 +156,9 @@ export function openOrFocusTabForRequest(path: string, draft: RequestDraft): voi
       };
     }
 
+    r.preRequest = draft.scripts?.pre_request ?? '';
+    r.tests = draft.scripts?.tests ?? '';
+
     if (!draft.body) {
       r.bodyKind = 'none';
       r.bodyText = '';
@@ -226,7 +229,10 @@ export function tabAsDraft(tabId: string): RequestDraft | null {
       .map((q) => ({ name: q.name, value: q.value, enabled: q.enabled })),
     auth: buildAuth(r),
     body: buildBody(r),
-    scripts: { pre_request: null, tests: null },
+    scripts: {
+      pre_request: r.preRequest.trim().length > 0 ? r.preRequest : null,
+      tests: r.tests.trim().length > 0 ? r.tests : null,
+    },
     schema_ref: null,
   };
 }

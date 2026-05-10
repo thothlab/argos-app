@@ -23,17 +23,33 @@ export async function ping(): Promise<string> {
   return invokeCommand<string>('ping');
 }
 
+/** Outcome of a `send_request` IPC call — response plus any pre-request
+ *  script logs and env mutations the script proposed. */
+export type SendOutcome = {
+  response: HttpResponse;
+  pre_request_logs: string[];
+  env_updates: Record<string, string>;
+};
+
 /**
  * Fire one HTTP request through the Rust engine and buffer the full response.
  *
  * Throws on transport errors (bad URL, timeout, network) — non-2xx HTTP
  * responses are returned normally so the UI can render the status badge.
+ *
+ * `preRequestScript` runs in the Rust scripting sandbox before the request
+ * leaves Argos. Pass `null` / `undefined` to skip.
  */
 export async function sendRequest(
   req: HttpRequest,
   env: Record<string, string> = {},
-): Promise<HttpResponse> {
-  return invokeCommand<HttpResponse>('send_request', { req, env });
+  preRequestScript: string | null = null,
+): Promise<SendOutcome> {
+  return invokeCommand<SendOutcome>('send_request', {
+    req,
+    env,
+    preRequestScript,
+  });
 }
 
 /** Render the request as a multi-line `curl` invocation. */

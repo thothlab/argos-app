@@ -50,10 +50,12 @@ export default function UrlBar() {
     const persist =
       ws && tab?.path ? { workspaceRoot: ws.root, requestPath: tab.path } : undefined;
 
-    sendRequest(wire, env)
-      .then((response) => {
-        setResponse(tabId, { status: 'ok', response });
-        recordRun(tabId, wire, response, persist);
+    const preScript = merged.preRequest.trim().length > 0 ? merged.preRequest : null;
+
+    sendRequest(wire, env, preScript)
+      .then((outcome) => {
+        setResponse(tabId, { status: 'ok', response: outcome.response });
+        recordRun(tabId, wire, outcome.response, persist);
       })
       .catch((e: unknown) => setResponse(tabId, { status: 'error', message: String(e) }));
   }

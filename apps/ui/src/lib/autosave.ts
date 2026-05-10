@@ -65,6 +65,8 @@ function watchTab(tabId: string): () => void {
         void q.value;
         void q.enabled;
       }
+      void r.preRequest;
+      void r.tests;
       // Serialise the auth union so a kind change re-runs the effect.
       void JSON.stringify(r.auth);
 

@@ -44,6 +44,8 @@ export type DraftRequest = {
   bodyKind: DraftBodyKind;
   bodyText: string;
   bodyContentType: string;
+  preRequest: string;
+  tests: string;
 };
 
 export type ResponseState =
@@ -69,6 +71,8 @@ export function emptyDraft(method: HttpMethod = 'GET'): DraftRequest {
     bodyKind: 'none',
     bodyText: '',
     bodyContentType: 'application/json',
+    preRequest: '',
+    tests: '',
   };
 }
 
@@ -181,6 +185,16 @@ export function setBodyContentType(tabId: string, ct: string): void {
 export function setAuth(tabId: string, auth: DraftAuth): void {
   if (!tabStates[tabId]) return;
   setTabStatesRaw(tabId, 'request', 'auth', auth);
+}
+
+export function setPreRequest(tabId: string, src: string): void {
+  if (!tabStates[tabId]) return;
+  setTabStatesRaw(tabId, 'request', 'preRequest', src);
+}
+
+export function setTests(tabId: string, src: string): void {
+  if (!tabStates[tabId]) return;
+  setTabStatesRaw(tabId, 'request', 'tests', src);
 }
 
 export function setResponse(tabId: string, response: ResponseState): void {
