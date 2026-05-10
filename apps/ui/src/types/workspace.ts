@@ -112,6 +112,11 @@ export type Environment = {
   secrets: EnvVar[];
 };
 
+/** Environment file paired with its absolute on-disk path. */
+export type EnvironmentEntry = {
+  path: string;
+} & Environment;
+
 // ---- tree ----------------------------------------------------------------
 
 export type TreeNode =
@@ -134,7 +139,7 @@ export type Workspace = {
   root: string;
   manifest: WorkspaceManifest;
   tree: TreeNode;
-  environments: Environment[];
+  environments: EnvironmentEntry[];
 };
 
 export type RecentEntry = {

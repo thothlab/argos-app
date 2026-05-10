@@ -5,12 +5,15 @@ import RequestEditor from './components/RequestEditor';
 import ResponsePane from './components/ResponsePane';
 import Splitter from './components/Splitter';
 import WelcomeScreen from './components/WelcomeScreen';
+import { installAutosave } from './lib/autosave';
 import { bind } from './lib/hotkeys';
 import { saveActiveTab } from './lib/save';
 import { activeTabId } from './stores/tabs';
 import { workspace } from './stores/workspace';
 
 export default function App() {
+  installAutosave();
+
   // ⌘S saves the active tab. Scratch tabs (no `path`) trigger a Save-As
   // dialog the first time, then save directly thereafter.
   bind({ key: 's', meta: true }, async () => {

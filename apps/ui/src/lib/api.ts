@@ -13,7 +13,7 @@
 import { invokeCommand } from './tauri';
 
 import type { HttpMethod, HttpRequest, HttpResponse } from '../types/http';
-import type { RecentEntry, RequestDraft, Workspace } from '../types/workspace';
+import type { Environment, RecentEntry, RequestDraft, Workspace } from '../types/workspace';
 
 export async function coreVersion(): Promise<string> {
   return invokeCommand<string>('core_version');
@@ -104,4 +104,18 @@ export async function treeDelete(path: string): Promise<void> {
 
 export async function treeMove(src: string, destDir: string): Promise<string> {
   return invokeCommand<string>('tree_move', { src, destDir });
+}
+
+// ---- environments -------------------------------------------------------
+
+export async function environmentSave(path: string, env: Environment): Promise<void> {
+  return invokeCommand<void>('environment_save', { path, env });
+}
+
+export async function environmentCreate(envDir: string, name: string): Promise<string> {
+  return invokeCommand<string>('environment_create', { envDir, name });
+}
+
+export async function environmentDelete(path: string): Promise<void> {
+  return invokeCommand<void>('environment_delete', { path });
 }
