@@ -17,7 +17,7 @@ import { nanoid } from 'nanoid';
 import { dropTabState, getRequest, initTabState, patchRequest, type DraftRequest } from './request';
 import { clearRuns, hydrateRuns } from './runs';
 import { workspace } from './workspace';
-import type { HttpMethod } from '../types/http';
+import type { HttpMethod, HttpRequest } from '../types/http';
 import type { RequestDraft } from '../types/workspace';
 
 export type Tab = {
@@ -108,6 +108,46 @@ export function openNewTab(template?: { title?: string; method?: HttpMethod }): 
   });
   initTabState(tab.id, { method: template?.method ?? 'GET' });
   setTabs((list) => [...list, tab]);
+  setActiveTabId(tab.id);
+}
+
+/**
+ * Open a fresh, unsaved tab pre-filled from a wire-shape `HttpRequest`.
+ * Used by import flows (cURL, Postman, …). The tab is marked dirty so
+ * the user knows they need to save or rename before it sticks.
+ */
+export function openTabFromHttpRequest(req: HttpRequest, title = 'Imported'): void {
+  const tab = makeTab({ title, pinned: false });
+  initTabState(tab.id, { method: req.method });
+  patchRequest(tab.id, (r) => {
+    r.method = req.method;
+    r.url = req.url;
+    r.headers = req.headers.map((h) => ({
+      name: h.name,
+      value: h.value,
+      enabled: true,
+    }));
+    r.query = req.query.map(([name, value]) => ({ name, value, enabled: true }));
+    if (!req.body) {
+      r.bodyKind = 'none';
+      r.bodyText = '';
+    } else if (req.body.kind === 'json') {
+      r.bodyKind = 'json';
+      r.bodyContentType = 'application/json';
+      r.bodyText = JSON.stringify(req.body.value, null, 2);
+    } else if (req.body.kind === 'text') {
+      r.bodyKind = 'text';
+      r.bodyContentType = req.body.content_type;
+      r.bodyText = req.body.content;
+    } else if (req.body.kind === 'form_url_encoded') {
+      r.bodyKind = 'form';
+      r.bodyContentType = 'application/x-www-form-urlencoded';
+      r.bodyText = req.body.fields
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&');
+    }
+  });
+  setTabs((list) => [...list, { ...tab, dirty: true }]);
   setActiveTabId(tab.id);
 }
 

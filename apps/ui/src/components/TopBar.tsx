@@ -10,6 +10,7 @@ import { createSignal, Show } from 'solid-js';
 import {
   ChevronDown,
   Command,
+  Download,
   LogOut,
   Monitor,
   Moon,
@@ -29,6 +30,7 @@ import { setWorkspace, workspace } from '../stores/workspace';
 import { closeAllTabs } from '../stores/tabs';
 import { workspaceClose } from '../lib/api';
 import { label } from '../lib/hotkeys';
+import CurlImportModal from './CurlImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
 
 export default function TopBar() {
@@ -61,9 +63,28 @@ export default function TopBar() {
 
       <div class="flex-1" />
 
+      <CurlImportControl />
       <CommandPaletteTrigger />
       <ThemeToggle />
     </header>
+  );
+}
+
+function CurlImportControl() {
+  const [open, setOpen] = createSignal(false);
+  return (
+    <>
+      <button
+        type="button"
+        class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+        title="Import from cURL"
+        onClick={() => setOpen(true)}
+      >
+        <Download size={14} />
+        <span class="font-mono text-[11px]">cURL</span>
+      </button>
+      <CurlImportModal open={open()} onOpenChange={setOpen} />
+    </>
   );
 }
 

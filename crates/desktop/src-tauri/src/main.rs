@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use argos_core::codegen::curl;
+use argos_core::codegen::curl::from_curl;
 use argos_core::format::{slugify, Environment, Folder, RequestDraft};
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
 use argos_scripting::{
@@ -187,6 +188,13 @@ async fn send_request(
 fn request_to_curl(req: HttpRequest, env: Option<HashMap<String, String>>) -> String {
     let resolved = resolve_request(req, env.unwrap_or_default());
     curl::to_curl(&resolved)
+}
+
+/// Parse a pasted `curl` command into a wire request. Multi-line
+/// commands with backslash continuations are accepted.
+#[tauri::command]
+fn curl_to_request(input: String) -> Result<HttpRequest, String> {
+    from_curl(&input).map_err(|e| e.to_string())
 }
 
 /// Translate an `argos_core::HttpBody` into a `ScriptBody` for the
@@ -712,6 +720,7 @@ fn main() {
             ping,
             send_request,
             request_to_curl,
+            curl_to_request,
             workspace_open,
             workspace_create,
             workspace_close,
