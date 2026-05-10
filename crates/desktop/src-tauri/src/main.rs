@@ -10,7 +10,9 @@ use std::collections::HashMap;
 
 use argos_core::codegen::curl;
 use argos_core::codegen::curl::from_curl;
-use argos_core::format::{slugify, Environment, Folder, RequestDraft};
+use argos_core::format::{slugify, EnvVar, Environment, Folder, RequestDraft};
+use argos_core::imports::postman;
+use argos_core::imports::ImportItem;
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
 use argos_scripting::{
     run_pre_request, run_tests, ScriptBody, ScriptFormField, ScriptHeader, ScriptRequest,
@@ -195,6 +197,173 @@ fn request_to_curl(req: HttpRequest, env: Option<HashMap<String, String>>) -> St
 #[tauri::command]
 fn curl_to_request(input: String) -> Result<HttpRequest, String> {
     from_curl(&input).map_err(|e| e.to_string())
+}
+
+/// Outcome of a Postman v2.1 import. The host UI uses these counts
+/// to render a brief toast-style summary ("Imported 23 requests in 4
+/// folders") and the absolute path of the freshly created folder so
+/// the workspace tree can scroll to it.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PostmanImportReport {
+    pub folder_path: String,
+    pub folders_created: usize,
+    pub requests_created: usize,
+    pub variables_count: usize,
+    pub env_path: Option<String>,
+}
+
+/// Import a Postman v2.1 collection JSON into the active workspace.
+///
+/// Creates a new top-level folder under `<workspace>/collections/` (or
+/// directly at the workspace root if there is no collections dir),
+/// named after the collection. Folders and requests are mirrored
+/// 1:1 from the Postman tree, with names slugified for filesystem
+/// safety. Collection variables become a fresh environment file
+/// `environments/<slug>.env.argos.yaml`; if one exists already we
+/// suffix with a counter to avoid clobbering.
+///
+/// `source` is either inline JSON (when `inline = true`) or a path to
+/// a JSON file on disk. Reading on the Rust side avoids needing the
+/// `@tauri-apps/plugin-fs` plugin in the UI.
+#[tauri::command]
+fn postman_import(
+    workspace_root: String,
+    source: String,
+    inline: Option<bool>,
+) -> Result<PostmanImportReport, String> {
+    let json = if inline.unwrap_or(false) {
+        source
+    } else {
+        std::fs::read_to_string(&source).map_err(|e| format!("read {source}: {e}"))?
+    };
+    let collection = postman::from_json(&json).map_err(|e| e.to_string())?;
+    let ws_root = Path::new(&workspace_root);
+    if !ws_root.is_dir() {
+        return Err(format!(
+            "workspace root is not a directory: {workspace_root}"
+        ));
+    }
+
+    let collections_root = if ws_root.join("collections").is_dir() {
+        ws_root.join("collections")
+    } else {
+        ws_root.to_path_buf()
+    };
+
+    let base_slug = slugify(&collection.name);
+    let mut target = collections_root.join(&base_slug);
+    let mut counter = 1;
+    while target.exists() {
+        counter += 1;
+        target = collections_root.join(format!("{base_slug}-{counter}"));
+    }
+    std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+    let mut folder_meta = Folder::new(&collection.name);
+    folder_meta.description = collection.description.clone();
+    folder_meta.save(&target).map_err(|e| e.to_string())?;
+
+    let mut counts = (0_usize, 0_usize); // (folders, requests)
+    write_import_items(&target, &collection.items, &mut counts)?;
+
+    // Variables → fresh environment file. We don't stomp on an
+    // existing one — pick a unique slug.
+    let env_path = if collection.variables.is_empty() {
+        None
+    } else {
+        let env_dir = ws_root.join("environments");
+        std::fs::create_dir_all(&env_dir).map_err(|e| e.to_string())?;
+        let mut env_slug = base_slug.clone();
+        let mut env_path = env_dir.join(format!("{env_slug}.env.argos.yaml"));
+        let mut env_counter = 1;
+        while env_path.exists() {
+            env_counter += 1;
+            env_slug = format!("{base_slug}-{env_counter}");
+            env_path = env_dir.join(format!("{env_slug}.env.argos.yaml"));
+        }
+        let mut env = Environment::new(&collection.name);
+        env.variables = collection
+            .variables
+            .iter()
+            .map(|(k, v)| EnvVar {
+                name: k.clone(),
+                value: v.clone(),
+                enabled: true,
+            })
+            .collect();
+        env.save(&env_path).map_err(|e| e.to_string())?;
+        Some(env_path.to_string_lossy().into_owned())
+    };
+
+    Ok(PostmanImportReport {
+        folder_path: target.to_string_lossy().into_owned(),
+        folders_created: counts.0,
+        requests_created: counts.1,
+        variables_count: collection.variables.len(),
+        env_path,
+    })
+}
+
+fn write_import_items(
+    parent: &Path,
+    items: &[ImportItem],
+    counts: &mut (usize, usize),
+) -> Result<(), String> {
+    let mut used_names: HashMap<String, u32> = HashMap::new();
+    for item in items {
+        match item {
+            ImportItem::Folder {
+                name,
+                description,
+                items,
+            } => {
+                let slug = unique_child_slug(parent, name, &mut used_names);
+                let dir = parent.join(&slug);
+                std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                let mut meta = Folder::new(name);
+                meta.description = description.clone();
+                meta.save(&dir).map_err(|e| e.to_string())?;
+                counts.0 += 1;
+                write_import_items(&dir, items, counts)?;
+            }
+            ImportItem::Request { draft } => {
+                let slug = unique_child_slug(parent, &draft.name, &mut used_names);
+                let path = parent.join(format!("{slug}.argos.yaml"));
+                draft.save(&path).map_err(|e| e.to_string())?;
+                counts.1 += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Compute a filesystem-safe child name unique within `parent`. We
+/// keep a per-call counter so siblings with identical sluggified
+/// names ("Get user", "GET-USER") don't clash.
+fn unique_child_slug(parent: &Path, name: &str, used: &mut HashMap<String, u32>) -> String {
+    let base = slugify(name);
+    let key = base.clone();
+    let n = used.entry(key).and_modify(|c| *c += 1).or_insert(0);
+    let candidate = if *n == 0 {
+        base.clone()
+    } else {
+        format!("{base}-{n}")
+    };
+    if !parent.join(&candidate).exists() && !parent.join(format!("{candidate}.argos.yaml")).exists()
+    {
+        return candidate;
+    }
+    // Fall back to numeric suffixes until we find a free slot.
+    let mut i = used[&base];
+    loop {
+        i += 1;
+        let try_slug = format!("{base}-{i}");
+        if !parent.join(&try_slug).exists()
+            && !parent.join(format!("{try_slug}.argos.yaml")).exists()
+        {
+            *used.get_mut(&base).unwrap() = i;
+            return try_slug;
+        }
+    }
 }
 
 /// Translate an `argos_core::HttpBody` into a `ScriptBody` for the
@@ -721,6 +890,7 @@ fn main() {
             send_request,
             request_to_curl,
             curl_to_request,
+            postman_import,
             workspace_open,
             workspace_create,
             workspace_close,

@@ -46,7 +46,7 @@ pub mod folder;
 pub mod request;
 pub mod workspace;
 
-pub use environment::Environment;
+pub use environment::{EnvVar, Environment};
 pub use folder::Folder;
 pub use request::{AuthConfig, BodyDraft, FormField, RequestDraft, RestRequest, ScriptHooks};
 pub use workspace::{WorkspaceConfig, WorkspaceManifest};

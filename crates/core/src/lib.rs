@@ -21,6 +21,7 @@
 pub mod codegen;
 pub mod format;
 pub mod http;
+pub mod imports;
 pub mod vars;
 pub mod workspace;
 
