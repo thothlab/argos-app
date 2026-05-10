@@ -18,6 +18,14 @@
 #![allow(clippy::module_name_repetitions)]
 #![allow(clippy::doc_markdown)]
 
+pub mod codegen;
+pub mod http;
+
+pub use http::{
+    HttpBody, HttpClient, HttpError, HttpHeader, HttpMethod, HttpRequest, HttpResponse,
+    ResponseBody, Timing,
+};
+
 /// Crate version (matches `Cargo.toml`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
