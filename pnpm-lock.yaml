@@ -23,6 +23,12 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.0.0
         version: 2.11.0
+      lucide-solid:
+        specifier: ^0.456.0
+        version: 0.456.0(solid-js@1.9.12)
+      nanoid:
+        specifier: ^5.0.0
+        version: 5.1.11
       solid-js:
         specifier: ^1.8.0
         version: 1.9.12
@@ -1412,6 +1418,11 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
+  lucide-solid@0.456.0:
+    resolution: {integrity: sha512-GNpxCduirznNl6J0Xlc4chRGpmuPzcAzuD29Xki+kq/TxBu0L4wTUB/PC9HkRITzDidyKQ19j3yOdJrKQmYoTg==}
+    peerDependencies:
+      solid-js: ^1.4.7
+
   lz-string@1.5.0:
     resolution: {integrity: sha512-h5bgJWpxJNswbU7qCrV0tIKQCaS3blPDrqKWx+QxzuzL1zGUzij9XCWLrSLsJPu5t+eWA/ycetzYAO5IOMcWAQ==}
     hasBin: true
@@ -1459,6 +1470,11 @@ packages:
   nanoid@3.3.12:
     resolution: {integrity: sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
+    hasBin: true
+
+  nanoid@5.1.11:
+    resolution: {integrity: sha512-v+KEsUv2ps74PaSKv0gHTxTCgMXOIfBEbaqa6w6ISIGC7ZsvHN4N9oJ8d4cmf0n5oTzQz2SLmThbQWhjd/8eKg==}
+    engines: {node: ^18 || >=20}
     hasBin: true
 
   natural-compare@1.4.0:
@@ -3261,6 +3277,10 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
+  lucide-solid@0.456.0(solid-js@1.9.12):
+    dependencies:
+      solid-js: 1.9.12
+
   lz-string@1.5.0: {}
 
   magic-string@0.30.21:
@@ -3303,6 +3323,8 @@ snapshots:
       thenify-all: 1.6.0
 
   nanoid@3.3.12: {}
+
+  nanoid@5.1.11: {}
 
   natural-compare@1.4.0: {}
 

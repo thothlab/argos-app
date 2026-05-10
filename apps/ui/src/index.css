@@ -4,7 +4,8 @@
 
 @layer base {
   :root {
-    /* Light theme tokens (mirror docs/06_designer_specification + design.pen). */
+    /* Light theme tokens (default).
+       Dark theme is applied via .dark class on <html> — see stores/theme.ts. */
     --bg-primary: #f2f3f0;
     --bg-card: #ffffff;
     --bg-secondary: #e7e8e5;
@@ -23,41 +24,88 @@
     --color-error-foreground: #8c1c00;
     --color-info: #dfdfe6;
     --color-info-foreground: #000066;
+
+    /* Method colours (REST verb badges). Pulled out of design.pen. */
+    --method-get: #1f8f4a;
+    --method-post: #b5630e;
+    --method-put: #1f70cf;
+    --method-patch: #7a4fcf;
+    --method-delete: #c5384a;
   }
 
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg-primary: #111111;
-      --bg-card: #1a1a1a;
-      --bg-secondary: #2e2e2e;
-      --fg-primary: #ffffff;
-      --fg-secondary: #b8b9b6;
-      --border: #2e2e2e;
+  html.dark {
+    --bg-primary: #111111;
+    --bg-card: #1a1a1a;
+    --bg-secondary: #2e2e2e;
+    --fg-primary: #ffffff;
+    --fg-secondary: #b8b9b6;
+    --border: #2e2e2e;
 
-      --color-success: #222924;
-      --color-success-foreground: #b6ffce;
-      --color-warning: #291c0f;
-      --color-warning-foreground: #ff8400;
-      --color-error: #24100b;
-      --color-error-foreground: #ff5c33;
-      --color-info: #222229;
-      --color-info-foreground: #b2b2ff;
-    }
+    --color-success: #222924;
+    --color-success-foreground: #b6ffce;
+    --color-warning: #291c0f;
+    --color-warning-foreground: #ff8400;
+    --color-error: #24100b;
+    --color-error-foreground: #ff5c33;
+    --color-info: #222229;
+    --color-info-foreground: #b2b2ff;
+
+    --method-get: #3fbf73;
+    --method-post: #e08a41;
+    --method-put: #5ba4f0;
+    --method-patch: #a380e5;
+    --method-delete: #f36b7a;
   }
 
   html,
-  body {
+  body,
+  #root {
     height: 100%;
     margin: 0;
+  }
+
+  body {
     background: var(--bg-primary);
     color: var(--fg-primary);
     font-family: 'Geist', system-ui, -apple-system, sans-serif;
+    font-size: 13px;
     -webkit-font-smoothing: antialiased;
+    overflow: hidden;
   }
 
   code,
   pre,
   .font-mono {
     font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* Honour `prefers-reduced-motion` — disable our short transitions. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
   }
 }
