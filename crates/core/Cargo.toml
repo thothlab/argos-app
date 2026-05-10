@@ -30,3 +30,4 @@ mime = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
 httpmock = { workspace = true }
+anyhow = { workspace = true }
