@@ -6,23 +6,23 @@ import ResponsePane from './components/ResponsePane';
 import Splitter from './components/Splitter';
 import WelcomeScreen from './components/WelcomeScreen';
 import { bind } from './lib/hotkeys';
-import { requestSave } from './lib/api';
-import { activeTab, activeTabId, markDirty, tabAsDraft } from './stores/tabs';
+import { saveActiveTab } from './lib/save';
+import { activeTabId } from './stores/tabs';
 import { workspace } from './stores/workspace';
 
 export default function App() {
-  // ⌘S saves the active tab to its backing file.
+  // ⌘S saves the active tab. Scratch tabs (no `path`) trigger a Save-As
+  // dialog the first time, then save directly thereafter.
   bind({ key: 's', meta: true }, async () => {
-    const tabId = activeTabId();
-    const t = activeTab();
-    if (!tabId || !t || !t.path) return;
-    const draft = tabAsDraft(tabId);
-    if (!draft) return;
-    try {
-      await requestSave(t.path, draft);
-      markDirty(tabId, false);
-    } catch (e) {
-      alert(`Save failed:\n\n${String(e)}`);
+    const outcome = await saveActiveTab();
+    switch (outcome.kind) {
+      case 'saved':
+      case 'cancelled':
+      case 'no-tab':
+      case 'no-workspace':
+        return;
+      case 'error':
+        alert(`Save failed:\n\n${outcome.message}`);
     }
   });
 
@@ -34,7 +34,8 @@ export default function App() {
           <p class="text-[13px] text-fg-secondary">
             No tab open. Click a request in the sidebar, or press{' '}
             <kbd class="rounded bg-bg-secondary px-1.5 py-0.5 font-mono text-[11px]">+</kbd> in the
-            tab bar for an unsaved scratch tab.
+            tab bar for an unsaved scratch tab. Save with{' '}
+            <kbd class="rounded bg-bg-secondary px-1.5 py-0.5 font-mono text-[11px]">⌘S</kbd>.
           </p>
         </div>
       }

@@ -92,6 +92,14 @@ export function markDirty(id: string, dirty: boolean): void {
   setTabs((list) => list.map((t) => (t.id === id ? { ...t, dirty } : t)));
 }
 
+export function setTabPath(id: string, path: string): void {
+  setTabs((list) => list.map((t) => (t.id === id ? { ...t, path } : t)));
+}
+
+export function setTabTitle(id: string, title: string): void {
+  setTabs((list) => list.map((t) => (t.id === id ? { ...t, title } : t)));
+}
+
 export function openNewTab(template?: { title?: string; method?: HttpMethod }): void {
   const tab = makeTab({
     title: template?.title ?? 'Untitled',
