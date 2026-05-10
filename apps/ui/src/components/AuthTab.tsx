@@ -167,7 +167,8 @@ export default function AuthTab() {
 
       <Show when={auth().kind === 'inherit'}>
         <p class="rounded border border-border bg-bg-secondary px-3 py-2 text-[12px] text-fg-secondary">
-          Folder-level auth resolution lands in a follow-up — for now `inherit` falls back to no auth.
+          Auth is taken from the nearest ancestor folder that defines one. If
+          no ancestor sets auth, the request is sent unauthenticated.
         </p>
       </Show>
     </div>

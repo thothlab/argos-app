@@ -10,8 +10,9 @@ import { Loader2, Send } from 'lucide-solid';
 
 import { sendRequest } from '../lib/api';
 import { bind, label } from '../lib/hotkeys';
+import { applyFolderInheritance, findAncestors } from '../lib/inherit';
 import { activeEnvVars } from '../stores/active-env';
-import { activeTabId } from '../stores/tabs';
+import { activeTab, activeTabId } from '../stores/tabs';
 import {
   getRequest,
   getResponse,
@@ -21,6 +22,7 @@ import {
   toWireRequest,
 } from '../stores/request';
 import { recordRun } from '../stores/runs';
+import { workspace } from '../stores/workspace';
 import type { HttpMethod } from '../types/http';
 
 import MethodPicker from './MethodPicker';
@@ -35,7 +37,13 @@ export default function UrlBar() {
     const draft = getRequest(tabId);
     if (!draft || !draft.url.trim()) return;
 
-    const wire = toWireRequest(draft);
+    const tab = activeTab();
+    const ancestors = tab?.path
+      ? findAncestors(tab.path, workspace()?.tree ?? null)
+      : [];
+    const merged = applyFolderInheritance(draft, ancestors);
+
+    const wire = toWireRequest(merged);
     const env = activeEnvVars();
     setResponse(tabId, { status: 'loading', startedAt: Date.now() });
     sendRequest(wire, env)
