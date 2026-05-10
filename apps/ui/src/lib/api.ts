@@ -60,6 +60,10 @@ export async function workspaceClearRecent(): Promise<void> {
   return invokeCommand<void>('workspace_clear_recent');
 }
 
+export async function workspaceClose(): Promise<void> {
+  return invokeCommand<void>('workspace_close');
+}
+
 /** Persist a request draft to its YAML file on disk. */
 export async function requestSave(path: string, draft: RequestDraft): Promise<void> {
   return invokeCommand<void>('request_save', { path, draft });

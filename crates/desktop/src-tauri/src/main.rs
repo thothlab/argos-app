@@ -1,6 +1,8 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod watcher;
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -10,6 +12,8 @@ use argos_core::{HttpClient, HttpRequest, HttpResponse, Workspace};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::sync::OnceCell;
+
+use watcher::ActiveWatcher;
 
 // ---- shared state --------------------------------------------------------
 
@@ -56,15 +60,18 @@ fn request_to_curl(req: HttpRequest) -> String {
 
 // ---- workspace -----------------------------------------------------------
 
-/// Open an existing workspace at `path`. Adds the path to recents on success.
+/// Open an existing workspace at `path`. Adds the path to recents on success
+/// and starts the file watcher.
 #[tauri::command]
 fn workspace_open(app: tauri::AppHandle, path: String) -> Result<Workspace, String> {
     let ws = Workspace::open(&path).map_err(|e| e.to_string())?;
     let _ = recents_add(&app, &ws.root);
+    let _ = watcher::start(&app, &ws.root);
     Ok(ws)
 }
 
-/// Create a new workspace at `path` with the given display name.
+/// Create a new workspace at `path` with the given display name. Also starts
+/// the file watcher.
 #[tauri::command]
 fn workspace_create(
     app: tauri::AppHandle,
@@ -73,7 +80,15 @@ fn workspace_create(
 ) -> Result<Workspace, String> {
     let ws = Workspace::create(&path, &name).map_err(|e| e.to_string())?;
     let _ = recents_add(&app, &ws.root);
+    let _ = watcher::start(&app, &ws.root);
     Ok(ws)
+}
+
+/// Stop the currently-running file watcher. Frontend calls this when the
+/// user closes the workspace (returns to the welcome screen).
+#[tauri::command]
+fn workspace_close(app: tauri::AppHandle) {
+    watcher::stop(&app);
 }
 
 /// Re-scan the workspace at `path` (called after external file changes).
@@ -182,9 +197,11 @@ fn main() {
     argos_core::init_tracing();
 
     let state: AppState = Arc::new(OnceCell::new());
+    let active_watcher = ActiveWatcher::default();
 
     tauri::Builder::default()
         .manage(state)
+        .manage(active_watcher)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -195,6 +212,7 @@ fn main() {
             request_to_curl,
             workspace_open,
             workspace_create,
+            workspace_close,
             workspace_reload,
             workspace_list_recent,
             workspace_clear_recent,
