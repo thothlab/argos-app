@@ -12,6 +12,7 @@ use argos_core::codegen::curl;
 use argos_core::codegen::curl::from_curl;
 use argos_core::exports::{har, postman as postman_export};
 use argos_core::format::{slugify, EnvVar, Environment, Folder, RequestDraft};
+use argos_core::imports::insomnia;
 use argos_core::imports::postman;
 use argos_core::imports::ImportItem;
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
@@ -281,12 +282,36 @@ fn postman_import(
     source: String,
     inline: Option<bool>,
 ) -> Result<PostmanImportReport, String> {
-    let json = if inline.unwrap_or(false) {
-        source
-    } else {
-        std::fs::read_to_string(&source).map_err(|e| format!("read {source}: {e}"))?
-    };
+    let json = read_inline_or_path(&source, inline.unwrap_or(false))?;
     let collection = postman::from_json(&json).map_err(|e| e.to_string())?;
+    materialise_import(&workspace_root, collection)
+}
+
+/// Import an Insomnia v4 export. Mirrors `postman_import` —
+/// re-uses `materialise_import` for the on-disk layout.
+#[tauri::command]
+fn insomnia_import(
+    workspace_root: String,
+    source: String,
+    inline: Option<bool>,
+) -> Result<PostmanImportReport, String> {
+    let json = read_inline_or_path(&source, inline.unwrap_or(false))?;
+    let collection = insomnia::from_json(&json).map_err(|e| e.to_string())?;
+    materialise_import(&workspace_root, collection)
+}
+
+fn read_inline_or_path(source: &str, inline: bool) -> Result<String, String> {
+    if inline {
+        Ok(source.to_string())
+    } else {
+        std::fs::read_to_string(source).map_err(|e| format!("read {source}: {e}"))
+    }
+}
+
+fn materialise_import(
+    workspace_root: &str,
+    collection: argos_core::imports::ImportedCollection,
+) -> Result<PostmanImportReport, String> {
     let ws_root = Path::new(&workspace_root);
     if !ws_root.is_dir() {
         return Err(format!(
@@ -942,6 +967,7 @@ fn main() {
             curl_to_request,
             postman_import,
             postman_export,
+            insomnia_import,
             run_export_har,
             workspace_open,
             workspace_create,
