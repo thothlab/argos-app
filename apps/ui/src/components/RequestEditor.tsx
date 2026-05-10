@@ -18,6 +18,7 @@ import {
   type DraftBodyKind,
 } from '../stores/request';
 
+import AuthTab from './AuthTab';
 import KeyValueTable, { type RowEntry } from './KeyValueTable';
 import UrlBar from './UrlBar';
 
@@ -27,7 +28,7 @@ const VISIBLE_TABS: Array<{ id: EditorTab; label: string; disabled?: boolean }> 
   { id: 'params', label: 'Params' },
   { id: 'headers', label: 'Headers' },
   { id: 'body', label: 'Body' },
-  { id: 'auth', label: 'Auth', disabled: true },
+  { id: 'auth', label: 'Auth' },
   { id: 'tests', label: 'Tests', disabled: true },
 ];
 
@@ -44,6 +45,10 @@ export default function RequestEditor() {
   const hasBody = () => {
     const d = draft();
     return d ? d.bodyKind !== 'none' && d.bodyText.length > 0 : false;
+  };
+  const hasAuth = () => {
+    const a = draft()?.auth;
+    return !!a && a.kind !== 'none';
   };
 
   return (
@@ -75,6 +80,9 @@ export default function RequestEditor() {
               <Show when={t.id === 'body' && hasBody()}>
                 <span class="h-1.5 w-1.5 rounded-full bg-primary" aria-label="has body" />
               </Show>
+              <Show when={t.id === 'auth' && hasAuth()}>
+                <span class="h-1.5 w-1.5 rounded-full bg-primary" aria-label="has auth" />
+              </Show>
               <Show when={activeEditorTab() === t.id}>
                 <span class="absolute inset-x-3 -bottom-px h-0.5 bg-primary" aria-hidden />
               </Show>
@@ -93,6 +101,9 @@ export default function RequestEditor() {
           </Match>
           <Match when={activeEditorTab() === 'body'}>
             <BodyTab />
+          </Match>
+          <Match when={activeEditorTab() === 'auth'}>
+            <AuthTab />
           </Match>
         </Switch>
       </div>
