@@ -1,16 +1,17 @@
 /**
  * Tab bar — open requests with active highlight, close, pin, new.
  *
- * Drag-and-drop reorder is intentionally minimal for T1.2: a single
- * "move to position" via primary-button drag with the tab being dragged
- * showing visual feedback. Polished interaction (cards-overflow, drag preview,
- * pin/unpin icons) lands in E8.
+ * The method-coloured badge is read from the **request store**, not the tab
+ * itself. Tab metadata stays minimal (title, pinned, dirty); the method is
+ * an attribute of the request inside the tab. Switching the verb in the
+ * URL bar updates the badge here automatically.
  */
 
 import { For, Show } from 'solid-js';
 
 import { Pin, Plus, X } from 'lucide-solid';
 
+import { getRequest } from '../stores/request';
 import {
   activeTabId,
   closeTab,
@@ -19,8 +20,8 @@ import {
   selectTab,
   tabs,
   togglePin,
-  type HttpMethod,
 } from '../stores/tabs';
+import type { HttpMethod } from '../types/http';
 
 const METHOD_VAR: Record<HttpMethod, string> = {
   GET: 'var(--method-get)',
@@ -52,6 +53,7 @@ export default function TabBar() {
         <For each={tabs()}>
           {(tab, i) => {
             const isActive = () => tab.id === activeTabId();
+            const method = (): HttpMethod => getRequest(tab.id)?.method ?? 'GET';
             return (
               <li
                 draggable={true}
@@ -71,11 +73,8 @@ export default function TabBar() {
                   onDblClick={() => togglePin(tab.id)}
                   title={tab.pinned ? 'Pinned tab — double-click to unpin' : 'Double-click to pin'}
                 >
-                  <span
-                    class="font-mono text-[10px] font-bold"
-                    style={{ color: METHOD_VAR[tab.method] }}
-                  >
-                    {tab.method}
+                  <span class="font-mono text-[10px] font-bold" style={{ color: METHOD_VAR[method()] }}>
+                    {method()}
                   </span>
                   <span class="max-w-[180px] truncate">{tab.title}</span>
                   <Show when={tab.dirty}>
@@ -102,10 +101,7 @@ export default function TabBar() {
                 </Show>
 
                 <Show when={isActive()}>
-                  <span
-                    class="absolute inset-x-0 -bottom-px h-px bg-primary"
-                    aria-hidden
-                  />
+                  <span class="absolute inset-x-0 -bottom-px h-px bg-primary" aria-hidden />
                 </Show>
               </li>
             );

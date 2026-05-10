@@ -55,7 +55,7 @@ export default function AppShell(props: AppShellProps) {
         <main class="flex flex-1 flex-col overflow-hidden">
           <TabBar />
 
-          <section class="flex-1 overflow-auto scrollbar-thin">{props.tabContent()}</section>
+          <section class="min-h-0 flex-1 overflow-hidden">{props.tabContent()}</section>
 
           <Show when={dockVisible()}>
             <LowerDock />
