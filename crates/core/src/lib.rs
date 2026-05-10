@@ -16,6 +16,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::module_name_repetitions)]
+#![allow(clippy::doc_markdown)]
 
 /// Crate version (matches `Cargo.toml`).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -38,7 +39,9 @@ pub fn init_tracing() {
 
     // Best-effort — if a global subscriber is already set, this is a no-op.
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_target(true)
         .try_init();
 }

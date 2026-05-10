@@ -4,5 +4,6 @@ hard_tabs = false
 tab_spaces = 4
 newline_style = "Unix"
 use_small_heuristics = "Default"
-imports_granularity = "Module"
-group_imports = "StdExternalCrate"
+# imports_granularity and group_imports are nightly-only; enable when we adopt
+# rustfmt-nightly via toolchain pin or when they stabilise.
+
