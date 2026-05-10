@@ -10,6 +10,7 @@ import { Loader2, Send } from 'lucide-solid';
 
 import { sendRequest } from '../lib/api';
 import { bind, label } from '../lib/hotkeys';
+import { activeEnvVars } from '../stores/active-env';
 import { activeTabId } from '../stores/tabs';
 import {
   getRequest,
@@ -35,8 +36,9 @@ export default function UrlBar() {
     if (!draft || !draft.url.trim()) return;
 
     const wire = toWireRequest(draft);
+    const env = activeEnvVars();
     setResponse(tabId, { status: 'loading', startedAt: Date.now() });
-    sendRequest(wire)
+    sendRequest(wire, env)
       .then((response) => {
         setResponse(tabId, { status: 'ok', response });
         recordRun(tabId, wire, response);

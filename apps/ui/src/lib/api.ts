@@ -29,13 +29,19 @@ export async function ping(): Promise<string> {
  * Throws on transport errors (bad URL, timeout, network) — non-2xx HTTP
  * responses are returned normally so the UI can render the status badge.
  */
-export async function sendRequest(req: HttpRequest): Promise<HttpResponse> {
-  return invokeCommand<HttpResponse>('send_request', { req });
+export async function sendRequest(
+  req: HttpRequest,
+  env: Record<string, string> = {},
+): Promise<HttpResponse> {
+  return invokeCommand<HttpResponse>('send_request', { req, env });
 }
 
 /** Render the request as a multi-line `curl` invocation. */
-export async function requestToCurl(req: HttpRequest): Promise<string> {
-  return invokeCommand<string>('request_to_curl', { req });
+export async function requestToCurl(
+  req: HttpRequest,
+  env: Record<string, string> = {},
+): Promise<string> {
+  return invokeCommand<string>('request_to_curl', { req, env });
 }
 
 // ---- workspace ----------------------------------------------------------

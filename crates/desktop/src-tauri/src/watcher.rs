@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use notify_debouncer_mini::{notify::RecursiveMode, new_debouncer, DebouncedEvent};
+use notify_debouncer_mini::{new_debouncer, notify::RecursiveMode, DebouncedEvent};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -55,7 +55,12 @@ pub fn start(app: &AppHandle, root: &Path) -> Result<(), String> {
         .map_err(|e| format!("canonicalize {}: {e}", root.display()))?;
 
     // Drop any previous watcher first.
-    if let Some(state) = app.state::<ActiveWatcher>().0.lock().ok().and_then(|mut g| g.take())
+    if let Some(state) = app
+        .state::<ActiveWatcher>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take())
     {
         drop(state);
     }

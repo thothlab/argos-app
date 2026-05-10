@@ -17,9 +17,12 @@ import {
   Search,
   Sun,
 } from 'lucide-solid';
+import { Select } from '@kobalte/core/select';
 
 import { dockVisible, sidebarVisible, toggleDock, toggleSidebar } from '../stores/layout';
 import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
+import { activeEnvName, setActiveEnvName } from '../stores/active-env';
+import { workspace } from '../stores/workspace';
 import { label } from '../lib/hotkeys';
 
 export default function TopBar() {
@@ -59,29 +62,84 @@ export default function TopBar() {
 }
 
 function WorkspacePicker() {
+  const ws = workspace;
   return (
     <button
       type="button"
       class="flex items-center gap-1.5 rounded-md px-2 py-1 text-fg-primary hover:bg-bg-secondary"
-      title="Switch workspace (TBD in E2)"
+      title={ws()?.root ?? 'No workspace'}
     >
-      <span class="font-mono text-[13px]">my-project</span>
+      <span class="font-mono text-[13px]">{ws()?.manifest.name ?? '—'}</span>
       <ChevronDown size={14} class="text-fg-secondary" />
     </button>
   );
 }
 
+const NO_ENV = '__no_env__';
+
 function EnvironmentPicker() {
+  const ws = workspace;
+  const options = (): string[] => {
+    const list = ws()?.environments.map((e) => e.name) ?? [];
+    return [NO_ENV, ...list];
+  };
+
+  const current = (): string => activeEnvName() ?? NO_ENV;
+
   return (
-    <button
-      type="button"
-      class="flex items-center gap-1.5 rounded-full bg-bg-secondary px-3 py-1 text-fg-primary hover:bg-border"
-      title="Switch environment (TBD in E3)"
+    <Show
+      when={ws()}
+      fallback={
+        <span class="font-mono text-[12px] text-fg-secondary">no env</span>
+      }
     >
-      <span class="h-1.5 w-1.5 rounded-full bg-[var(--color-success-foreground)]" aria-hidden />
-      <span class="font-mono text-[12px]">production</span>
-      <ChevronDown size={12} class="text-fg-secondary" />
-    </button>
+      <Select<string>
+        value={current()}
+        onChange={(v) => setActiveEnvName(v && v !== NO_ENV ? v : null)}
+        options={options()}
+        itemComponent={(itemProps) => (
+          <Select.Item
+            item={itemProps.item}
+            class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[selected]:bg-bg-secondary"
+          >
+            <Select.ItemLabel class="font-mono">
+              {itemProps.item.rawValue === NO_ENV ? 'no env' : itemProps.item.rawValue}
+            </Select.ItemLabel>
+          </Select.Item>
+        )}
+      >
+        <Select.Trigger
+          aria-label="Active environment"
+          class="flex items-center gap-1.5 rounded-full bg-bg-secondary px-3 py-1 text-fg-primary hover:bg-border"
+        >
+          <span
+            class="h-1.5 w-1.5 rounded-full"
+            style={{
+              background:
+                activeEnvName() === null
+                  ? 'var(--fg-secondary)'
+                  : 'var(--color-success-foreground)',
+            }}
+            aria-hidden
+          />
+          <Select.Value<string>>
+            {(s) => (
+              <span class="font-mono text-[12px]">
+                {s.selectedOption() === NO_ENV ? 'no env' : s.selectedOption()}
+              </span>
+            )}
+          </Select.Value>
+          <Select.Icon>
+            <ChevronDown size={12} class="text-fg-secondary" />
+          </Select.Icon>
+        </Select.Trigger>
+        <Select.Portal>
+          <Select.Content class="z-50 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
+            <Select.Listbox class="max-h-72 overflow-auto py-1" />
+          </Select.Content>
+        </Select.Portal>
+      </Select>
+    </Show>
   );
 }
 
