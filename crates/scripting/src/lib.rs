@@ -6,17 +6,19 @@
 //! and execution time are bounded by the host (we just don't expose
 //! anything that could escape the sandbox).
 //!
-//! The first slice exposes:
+//! Pre-request scripts can use:
 //! - `bru.log(...args)`            — captures messages for the host UI.
 //! - `bru.env.get(name)`           — read the active environment.
 //! - `bru.env.set(name, value)`    — propose a new env value.
 //! - `bru.req`                     — request snapshot the script can mutate
 //!                                   (`url`, `method`, `headers`).
 //!
-//! Mutations that the script makes to `bru.env` and `bru.req` are pulled
-//! back out after `Sandbox::run_pre_request` and returned to the caller
-//! as a [`ScriptOutcome`]. Tests / response-side scripting lands in the
-//! follow-up chunk.
+//! Tests scripts (run after the response arrives) additionally see:
+//! - `bru.res.status` / `bru.res.body` / `bru.res.getHeader(name)`.
+//! - `bru.res.json()` — parsed body (throws if not valid JSON).
+//! - `bru.test(name, fn)` — register a test case; thrown errors fail it.
+//! - `bru.expect(value).toBe / .toEqual / .toBeTruthy / .toBeFalsy /
+//!    .toContain` — minimal assertion DSL.
 
 #![forbid(unsafe_code)]
 #![allow(clippy::unnecessary_wraps)]
@@ -108,8 +110,45 @@ pub fn run_pre_request(
     env: HashMap<String, String>,
 ) -> Result<ScriptOutcome, ScriptError> {
     let mut sandbox = Sandbox::new(request, env)?;
+    sandbox.install_pre_request_globals()?;
     sandbox.eval(script)?;
     Ok(sandbox.into_outcome())
+}
+
+/// Snapshot of the response a tests script can read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptResponse {
+    pub status: u16,
+    pub body: String,
+    pub headers: Vec<ScriptHeader>,
+}
+
+/// Result of one `bru.test(name, fn)` invocation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TestResult {
+    pub name: String,
+    pub passed: bool,
+    pub message: String,
+}
+
+/// Aggregate outcome of running a tests script.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TestsOutcome {
+    pub logs: Vec<String>,
+    pub tests: Vec<TestResult>,
+    pub env_updates: HashMap<String, String>,
+}
+
+/// Run a tests script after a response arrives.
+pub fn run_tests(
+    script: &str,
+    response: ScriptResponse,
+    env: HashMap<String, String>,
+) -> Result<TestsOutcome, ScriptError> {
+    let mut sandbox = Sandbox::new(ScriptRequest::default(), env)?;
+    sandbox.install_response_globals(response)?;
+    sandbox.eval(script)?;
+    Ok(sandbox.into_tests_outcome())
 }
 
 // ---- internals -----------------------------------------------------------
@@ -118,15 +157,17 @@ struct Sandbox {
     ctx: Context,
 }
 
-/// Shared state the host sees through `bru`. We juggle a `RefCell<State>`
-/// indirectly via boa's `HostDefined` slot since the native callbacks
-/// borrow the context mutably.
+/// Shared state. Native callbacks reach it via the thread-local `STATE`
+/// slot. Both pre-request and tests sandboxes use the same `State` —
+/// fields not relevant to a given mode are simply left at their default.
 #[derive(Default)]
 struct State {
     logs: Vec<String>,
     request: ScriptRequest,
+    response: ScriptResponse,
     env: HashMap<String, String>,
     env_updates: HashMap<String, String>,
+    tests: Vec<TestResult>,
 }
 
 impl Sandbox {
@@ -140,12 +181,14 @@ impl Sandbox {
             *cell.borrow_mut() = Some(State {
                 logs: Vec::new(),
                 request,
+                response: ScriptResponse::default(),
                 env,
                 env_updates: HashMap::new(),
+                tests: Vec::new(),
             });
         });
 
-        Self::install_bru_global(&mut ctx)?;
+        Self::install_bru_skeleton(&mut ctx)?;
         Ok(Self { ctx })
     }
 
@@ -167,11 +210,48 @@ impl Sandbox {
         }
     }
 
-    fn install_bru_global(ctx: &mut Context) -> Result<(), ScriptError> {
-        // Build the `bru` object piece by piece.
+    fn into_tests_outcome(self) -> TestsOutcome {
+        let state = STATE
+            .with(|cell| cell.borrow_mut().take())
+            .expect("state slot present");
+        TestsOutcome {
+            logs: state.logs,
+            tests: state.tests,
+            env_updates: state.env_updates,
+        }
+    }
+
+    /// Install `bru.log` and `bru.env`. Both modes share these.
+    fn install_bru_skeleton(ctx: &mut Context) -> Result<(), ScriptError> {
         let log_fn = NativeFunction::from_fn_ptr(bru_log);
         let env_get_fn = NativeFunction::from_fn_ptr(bru_env_get);
         let env_set_fn = NativeFunction::from_fn_ptr(bru_env_set);
+
+        let env_obj = ObjectInitializer::new(ctx)
+            .function(env_get_fn, js_string!("get"), 1)
+            .function(env_set_fn, js_string!("set"), 2)
+            .build();
+
+        let bru = ObjectInitializer::new(ctx)
+            .function(log_fn, js_string!("log"), 1)
+            .property(
+                PropertyKey::from(js_string!("env")),
+                env_obj,
+                Attribute::READONLY | Attribute::PERMANENT,
+            )
+            .build();
+
+        ctx.register_global_property(
+            js_string!("bru"),
+            bru,
+            Attribute::WRITABLE | Attribute::PERMANENT,
+        )
+        .map_err(|e| ScriptError::Runtime(format!("bru install: {e}")))?;
+        Ok(())
+    }
+
+    fn install_pre_request_globals(&mut self) -> Result<(), ScriptError> {
+        let ctx = &mut self.ctx;
         let req_get_url_fn = NativeFunction::from_fn_ptr(bru_req_get_url);
         let req_set_url_fn = NativeFunction::from_fn_ptr(bru_req_set_url);
         let req_get_method_fn = NativeFunction::from_fn_ptr(bru_req_get_method);
@@ -179,11 +259,6 @@ impl Sandbox {
         let req_set_header_fn = NativeFunction::from_fn_ptr(bru_req_set_header);
         let req_get_header_fn = NativeFunction::from_fn_ptr(bru_req_get_header);
         let req_remove_header_fn = NativeFunction::from_fn_ptr(bru_req_remove_header);
-
-        let env_obj = ObjectInitializer::new(ctx)
-            .function(env_get_fn, js_string!("get"), 1)
-            .function(env_set_fn, js_string!("set"), 2)
-            .build();
 
         let req_obj = ObjectInitializer::new(ctx)
             .function(req_get_url_fn, js_string!("getUrl"), 0)
@@ -195,29 +270,118 @@ impl Sandbox {
             .function(req_remove_header_fn, js_string!("removeHeader"), 1)
             .build();
 
-        let bru = ObjectInitializer::new(ctx)
-            .function(log_fn, js_string!("log"), 1)
-            .property(
-                PropertyKey::from(js_string!("env")),
-                env_obj,
-                Attribute::READONLY | Attribute::PERMANENT,
-            )
-            .property(
-                PropertyKey::from(js_string!("req")),
-                req_obj,
-                Attribute::READONLY | Attribute::PERMANENT,
-            )
+        let bru = ctx
+            .global_object()
+            .get(js_string!("bru"), ctx)
+            .map_err(ScriptError::from)?;
+        let bru_obj = bru
+            .as_object()
+            .cloned()
+            .ok_or_else(|| ScriptError::Runtime("bru global missing".into()))?;
+        bru_obj
+            .set(js_string!("req"), req_obj, false, ctx)
+            .map_err(ScriptError::from)?;
+        Ok(())
+    }
+
+    fn install_response_globals(&mut self, response: ScriptResponse) -> Result<(), ScriptError> {
+        with_state(&self.ctx, |s| s.response = response.clone());
+
+        let ctx = &mut self.ctx;
+        let res_status_fn = NativeFunction::from_fn_ptr(bru_res_status);
+        let res_body_fn = NativeFunction::from_fn_ptr(bru_res_body);
+        let res_get_header_fn = NativeFunction::from_fn_ptr(bru_res_get_header);
+        let record_test_fn = NativeFunction::from_fn_ptr(bru_record_test);
+
+        let res_obj = ObjectInitializer::new(ctx)
+            .function(res_status_fn, js_string!("getStatus"), 0)
+            .function(res_body_fn, js_string!("getBody"), 0)
+            .function(res_get_header_fn, js_string!("getHeader"), 1)
             .build();
 
-        ctx.register_global_property(
-            js_string!("bru"),
-            bru,
-            Attribute::READONLY | Attribute::PERMANENT,
-        )
-        .map_err(|e| ScriptError::Runtime(format!("bru install: {e}")))?;
+        let bru = ctx
+            .global_object()
+            .get(js_string!("bru"), ctx)
+            .map_err(ScriptError::from)?;
+        let bru_obj = bru
+            .as_object()
+            .cloned()
+            .ok_or_else(|| ScriptError::Runtime("bru global missing".into()))?;
+        bru_obj
+            .set(js_string!("res"), res_obj, false, ctx)
+            .map_err(ScriptError::from)?;
+        bru_obj
+            .set(
+                js_string!("__recordTest"),
+                JsValue::from(record_test_fn.to_js_function(ctx.realm())),
+                false,
+                ctx,
+            )
+            .map_err(ScriptError::from)?;
+
+        // JS prelude — wires bru.test / bru.expect / bru.res helpers in
+        // terms of the native callbacks above.
+        ctx.eval(Source::from_bytes(JS_PRELUDE))
+            .map_err(ScriptError::from)?;
         Ok(())
     }
 }
+
+const JS_PRELUDE: &str = r#"
+(function() {
+  const status = bru.res.getStatus();
+  const body = bru.res.getBody();
+  const getHeader = bru.res.getHeader.bind(bru.res);
+  bru.res = {
+    status,
+    body,
+    getHeader,
+    json() {
+      try {
+        return JSON.parse(body);
+      } catch (e) {
+        throw new Error('bru.res.json: body is not valid JSON');
+      }
+    },
+  };
+  bru.expect = function(actual) {
+    return {
+      toBe(expected) {
+        if (!Object.is(actual, expected)) {
+          throw new Error('Expected ' + JSON.stringify(actual) + ' to be ' + JSON.stringify(expected));
+        }
+      },
+      toEqual(expected) {
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+          throw new Error('Expected ' + JSON.stringify(actual) + ' to equal ' + JSON.stringify(expected));
+        }
+      },
+      toBeTruthy() {
+        if (!actual) throw new Error('Expected truthy, got ' + JSON.stringify(actual));
+      },
+      toBeFalsy() {
+        if (actual) throw new Error('Expected falsy, got ' + JSON.stringify(actual));
+      },
+      toContain(needle) {
+        const ok = (typeof actual === 'string' && actual.indexOf(needle) >= 0) ||
+                   (Array.isArray(actual) && actual.indexOf(needle) >= 0);
+        if (!ok) {
+          throw new Error('Expected ' + JSON.stringify(actual) + ' to contain ' + JSON.stringify(needle));
+        }
+      },
+    };
+  };
+  bru.test = function(name, fn) {
+    try {
+      fn();
+      bru.__recordTest(String(name), true, '');
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : String(e);
+      bru.__recordTest(String(name), false, msg);
+    }
+  };
+})();
+"#;
 
 // ---- native callbacks ----------------------------------------------------
 
@@ -335,6 +499,46 @@ fn bru_req_remove_header(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -
     Ok(JsValue::undefined())
 }
 
+fn bru_res_status(_this: &JsValue, _args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let status = with_state(ctx, |s| s.response.status);
+    Ok(JsValue::from(i32::from(status)))
+}
+
+fn bru_res_body(_this: &JsValue, _args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let body = with_state(ctx, |s| s.response.body.clone());
+    Ok(JsValue::String(JsString::from(body)))
+}
+
+fn bru_res_get_header(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let name = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped()
+        .to_lowercase();
+    let val = with_state(ctx, |s| {
+        s.response
+            .headers
+            .iter()
+            .find(|h| h.name.to_lowercase() == name)
+            .map(|h| h.value.clone())
+    });
+    Ok(val.map_or(JsValue::undefined(), |v| JsValue::String(JsString::from(v))))
+}
+
+fn bru_record_test(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let name = args.get_or_undefined(0).to_string(ctx)?.to_std_string_escaped();
+    let passed = args.get_or_undefined(1).to_boolean();
+    let message = args.get_or_undefined(2).to_string(ctx)?.to_std_string_escaped();
+    with_state(ctx, |s| {
+        s.tests.push(TestResult {
+            name,
+            passed,
+            message,
+        });
+    });
+    Ok(JsValue::undefined())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,6 +596,69 @@ mod tests {
         let err = run_pre_request("this is not js", req(), HashMap::new()).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("script error"), "unexpected message: {msg}");
+    }
+
+    fn json_response(body: &str, status: u16) -> ScriptResponse {
+        ScriptResponse {
+            status,
+            body: body.into(),
+            headers: vec![ScriptHeader {
+                name: "Content-Type".into(),
+                value: "application/json".into(),
+            }],
+        }
+    }
+
+    #[test]
+    fn tests_record_passes_and_fails() {
+        let script = r#"
+            bru.test('status is 200', () => {
+                bru.expect(bru.res.status).toBe(200);
+            });
+            bru.test('body contains hello', () => {
+                bru.expect(bru.res.body).toContain('hello');
+            });
+            bru.test('intentional failure', () => {
+                bru.expect(1).toBe(2);
+            });
+        "#;
+        let res = json_response(r#"{"greeting":"hello world"}"#, 200);
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+
+        assert_eq!(out.tests.len(), 3);
+        assert!(out.tests[0].passed);
+        assert!(out.tests[1].passed);
+        assert!(!out.tests[2].passed);
+        assert!(out.tests[2].message.contains("Expected 1 to be 2"));
+    }
+
+    #[test]
+    fn tests_can_use_json_helper() {
+        let script = r#"
+            const data = bru.res.json();
+            bru.test('greeting field', () => {
+                bru.expect(data.greeting).toEqual('hi');
+            });
+            bru.log('greeting=', data.greeting);
+        "#;
+        let res = json_response(r#"{"greeting":"hi"}"#, 200);
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+        assert_eq!(out.tests.len(), 1);
+        assert!(out.tests[0].passed);
+        assert_eq!(out.logs[0], "greeting= hi");
+    }
+
+    #[test]
+    fn tests_response_header_lookup_is_case_insensitive() {
+        let script = r#"
+            bru.test('content-type', () => {
+                bru.expect(bru.res.getHeader('CONTENT-TYPE')).toBe('application/json');
+            });
+        "#;
+        let res = json_response(r#"{}"#, 200);
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+        assert_eq!(out.tests.len(), 1);
+        assert!(out.tests[0].passed);
     }
 
     #[test]

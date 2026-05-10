@@ -20,6 +20,7 @@
 import { createStore, produce } from 'solid-js/store';
 
 import type { RowEntry } from '../components/KeyValueTable';
+import type { TestResult } from '../lib/api';
 import type { HttpBody, HttpMethod, HttpRequest, HttpResponse } from '../types/http';
 
 // ---- draft shape ----------------------------------------------------------
@@ -51,7 +52,13 @@ export type DraftRequest = {
 export type ResponseState =
   | { status: 'idle' }
   | { status: 'loading'; startedAt: number }
-  | { status: 'ok'; response: HttpResponse }
+  | {
+      status: 'ok';
+      response: HttpResponse;
+      tests?: TestResult[];
+      preRequestLogs?: string[];
+      testsLogs?: string[];
+    }
   | { status: 'error'; message: string };
 
 type TabState = {
