@@ -12,9 +12,17 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.2",
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/theme-one-dark": "^6.1.3",
+    "@codemirror/view": "^6.42.1",
     "@kobalte/core": "^0.13.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
+    "codemirror": "^6.0.2",
     "lucide-solid": "^0.456.0",
     "nanoid": "^5.0.0",
     "solid-js": "^1.8.0"
