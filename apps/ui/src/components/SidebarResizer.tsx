@@ -5,7 +5,7 @@
  * Width clamping happens inside the store; this component just feeds raw px.
  */
 
-import { setSidebarWidth, sidebarWidth } from '~/stores/layout';
+import { setSidebarWidth, sidebarWidth } from '../stores/layout';
 
 export default function SidebarResizer() {
   function onPointerDown(downEvt: PointerEvent) {

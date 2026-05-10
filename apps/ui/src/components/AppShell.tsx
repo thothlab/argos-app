@@ -15,9 +15,9 @@
 
 import { Show, type JSX } from 'solid-js';
 
-import { sidebarVisible, sidebarWidth, dockVisible, toggleSidebar, toggleDock } from '~/stores/layout';
-import { cycleTheme } from '~/stores/theme';
-import { bind } from '~/lib/hotkeys';
+import { sidebarVisible, sidebarWidth, dockVisible, toggleSidebar, toggleDock } from '../stores/layout';
+import { cycleTheme } from '../stores/theme';
+import { bind } from '../lib/hotkeys';
 
 import LowerDock from './LowerDock';
 import Sidebar from './Sidebar';

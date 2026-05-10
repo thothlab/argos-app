@@ -9,7 +9,7 @@
 
 import { createEffect, createSignal } from 'solid-js';
 
-import { loadJSON, saveJSON } from '~/lib/persist';
+import { loadJSON, saveJSON } from '../lib/persist';
 
 export const SIDEBAR_MIN = 240;
 export const SIDEBAR_MAX = 480;

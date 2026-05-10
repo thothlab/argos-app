@@ -10,7 +10,7 @@ import { For } from 'solid-js';
 
 import { X } from 'lucide-solid';
 
-import { toggleDock } from '~/stores/layout';
+import { toggleDock } from '../stores/layout';
 
 const TABS = ['Logs', 'Runs', 'Console'];
 

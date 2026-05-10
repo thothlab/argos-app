@@ -18,9 +18,9 @@ import {
   Sun,
 } from 'lucide-solid';
 
-import { dockVisible, sidebarVisible, toggleDock, toggleSidebar } from '~/stores/layout';
-import { cycleTheme, effectiveTheme, theme } from '~/stores/theme';
-import { label } from '~/lib/hotkeys';
+import { dockVisible, sidebarVisible, toggleDock, toggleSidebar } from '../stores/layout';
+import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
+import { label } from '../lib/hotkeys';
 
 export default function TopBar() {
   return (

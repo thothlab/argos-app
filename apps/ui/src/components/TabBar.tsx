@@ -20,7 +20,7 @@ import {
   tabs,
   togglePin,
   type HttpMethod,
-} from '~/stores/tabs';
+} from '../stores/tabs';
 
 const METHOD_VAR: Record<HttpMethod, string> = {
   GET: 'var(--method-get)',

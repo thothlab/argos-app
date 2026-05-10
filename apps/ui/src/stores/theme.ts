@@ -12,7 +12,7 @@
 
 import { createSignal, createEffect } from 'solid-js';
 
-import { loadJSON, saveJSON } from '~/lib/persist';
+import { loadJSON, saveJSON } from '../lib/persist';
 
 export type Theme = 'light' | 'dark' | 'system';
 
