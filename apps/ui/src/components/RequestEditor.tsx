@@ -19,8 +19,10 @@ import {
   setTests,
   type DraftBodyKind,
 } from '../stores/request';
+import { snippetsFor, type Snippet, type SnippetKind } from '../lib/snippets';
 
 import AuthTab from './AuthTab';
+import CodeEditor, { type CodeEditorRef } from './CodeEditor';
 import KeyValueTable, { type RowEntry } from './KeyValueTable';
 import UrlBar from './UrlBar';
 
@@ -194,9 +196,9 @@ function ScriptsTab() {
     <div class="flex h-full flex-col gap-4 p-4">
       <ScriptBlock
         title="Pre-request"
-        hint="Runs in the Argos sandbox before the request leaves your machine. Use bru.req.* to mutate the wire request, bru.env.set/get for variables, bru.log(...) for output."
+        kind="pre"
+        hint="Runs in the Argos sandbox before the request leaves your machine. Use bru.req.* to mutate the wire request, bru.env.set/get for variables, bru.log/info/warn for output, bru.fail(msg) to abort."
         value={draft()?.preRequest ?? ''}
-        placeholder={`// Example:\nconst now = new Date().toISOString();\nbru.req.setHeader('X-Sent-At', now);\nbru.env.set('lastRunAt', now);\n`}
         onInput={(v) => {
           const tabId = id();
           if (tabId) setPreRequest(tabId, v);
@@ -204,9 +206,9 @@ function ScriptsTab() {
       />
       <ScriptBlock
         title="Tests"
+        kind="tests"
         hint="Runs after the response arrives. Use bru.test(name, fn) and bru.expect(value).toBe / .toEqual / .toBeTruthy / .toContain. Read response via bru.res.status / .body / .json() / .getHeader()."
         value={draft()?.tests ?? ''}
-        placeholder={`bru.test('Status is 200', () => {\n  bru.expect(bru.res.status).toBe(200);\n});\n`}
         onInput={(v) => {
           const tabId = id();
           if (tabId) setTests(tabId, v);
@@ -218,26 +220,79 @@ function ScriptsTab() {
 
 function ScriptBlock(props: {
   title: string;
+  kind: SnippetKind;
   hint: string;
   value: string;
-  placeholder: string;
   onInput: (v: string) => void;
 }) {
+  let editorRef: CodeEditorRef | null = null;
+
+  function insertSnippet(s: Snippet) {
+    if (editorRef) {
+      const next = editorRef.insertAtCursor(s.body);
+      props.onInput(next);
+    } else {
+      // Fallback (editor not yet mounted): append.
+      const sep = props.value.length > 0 && !props.value.endsWith('\n') ? '\n' : '';
+      props.onInput(props.value + sep + s.body);
+    }
+  }
+
   return (
-    <div class="flex min-h-[160px] flex-1 flex-col">
+    <div class="flex min-h-[200px] flex-1 flex-col">
       <div class="mb-1 flex items-baseline gap-2">
         <h3 class="text-[13px] font-medium text-fg-primary">{props.title}</h3>
-        <span class="text-[11px] text-fg-secondary">{props.hint}</span>
+        <span class="flex-1 text-[11px] text-fg-secondary">{props.hint}</span>
+        <SnippetMenu kind={props.kind} onPick={insertSnippet} />
       </div>
-      <textarea
-        spellcheck={false}
-        autocomplete="off"
-        autocorrect="off"
-        class="flex-1 resize-none rounded border border-border bg-bg-card p-3 font-mono text-[12px] outline-none focus:border-primary scrollbar-thin"
-        placeholder={props.placeholder}
+      <CodeEditor
         value={props.value}
-        onInput={(e) => props.onInput(e.currentTarget.value)}
+        onChange={props.onInput}
+        ref={(api) => (editorRef = api)}
+        minHeight="160px"
       />
+    </div>
+  );
+}
+
+function SnippetMenu(props: { kind: SnippetKind; onPick: (s: Snippet) => void }) {
+  const [open, setOpen] = createSignal(false);
+  const items = () => snippetsFor(props.kind);
+
+  return (
+    <div class="relative shrink-0">
+      <button
+        type="button"
+        class="rounded border border-border bg-bg-card px-2 py-1 text-[11px] text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+        onClick={() => setOpen((v) => !v)}
+        title="Insert snippet"
+      >
+        Snippets ▾
+      </button>
+      <Show when={open()}>
+        <div
+          class="absolute right-0 top-full z-20 mt-1 w-[280px] rounded border border-border bg-bg-card shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div class="max-h-[280px] overflow-auto py-1 scrollbar-thin">
+            <For each={items()}>
+              {(s) => (
+                <button
+                  type="button"
+                  class="block w-full px-3 py-1.5 text-left text-[12px] hover:bg-bg-secondary"
+                  onClick={() => {
+                    props.onPick(s);
+                    setOpen(false);
+                  }}
+                >
+                  <div class="font-medium text-fg-primary">{s.label}</div>
+                  <div class="text-[11px] leading-snug text-fg-secondary">{s.description}</div>
+                </button>
+              )}
+            </For>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 }
