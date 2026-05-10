@@ -37,6 +37,8 @@ export type SendOutcome = {
   tests_logs: string[];
   tests: TestResult[];
   env_updates: Record<string, string>;
+  /** Names the script(s) cleared via `bru.env.unset` / `pm.environment.unset`. */
+  env_unsets?: string[];
 };
 
 /**

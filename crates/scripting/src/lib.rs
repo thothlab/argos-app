@@ -17,6 +17,8 @@
 //!                                   script error.
 //! - `bru.env.get(name)`           — read the active environment.
 //! - `bru.env.set(name, value)`    — propose a new env value.
+//! - `bru.env.unset(name)`         — clear a value (staged as empty).
+//! - `bru.env.has(name)`           — boolean presence check.
 //! - `bru.req`                     — request snapshot the script can mutate
 //!                                   (`url`, `method`, `headers`, body via
 //!                                   `getBody / setJsonBody / setTextBody /
@@ -28,6 +30,14 @@
 //! - `bru.test(name, fn)` — register a test case; thrown errors fail it.
 //! - `bru.expect(value).toBe / .toEqual / .toBeTruthy / .toBeFalsy /
 //!    .toContain` — minimal assertion DSL.
+//!
+//! A Postman compatibility shim (`pm.*`) is installed in both modes so
+//! existing Postman snippets can be pasted in: `pm.environment`,
+//! `pm.collectionVariables`, `pm.globals`, `pm.variables`, `pm.request`,
+//! `pm.response`, `pm.test`, and a Chai-like `pm.expect(...).to.equal /
+//! .eql / .be.true / .be.false / .be.ok / .have.property / .have.status
+//! / .include / .match / .have.lengthOf`. Anything that needs network
+//! I/O (e.g. `pm.sendRequest`) is intentionally absent.
 
 #![forbid(unsafe_code)]
 #![allow(clippy::unnecessary_wraps)]
@@ -40,7 +50,7 @@
 #![allow(clippy::doc_overindented_list_items)]
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use boa_engine::{
     js_string,
@@ -120,6 +130,10 @@ pub struct ScriptOutcome {
     /// to merge these back into the active env (we don't persist them to
     /// disk by default — that would surprise users).
     pub env_updates: HashMap<String, String>,
+    /// Names the script cleared via `bru.env.unset`. The host should drop
+    /// these keys from its env map after applying `env_updates`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_unsets: Vec<String>,
     /// `true` iff the script touched `bru.req` body (`setJsonBody`,
     /// `setTextBody`, `setFormBody`, `clearBody`). When `false`, the host
     /// should keep its original body — useful for `Raw` bodies the
@@ -180,6 +194,9 @@ pub struct TestsOutcome {
     pub logs: Vec<String>,
     pub tests: Vec<TestResult>,
     pub env_updates: HashMap<String, String>,
+    /// Names the script cleared via `bru.env.unset` / `pm.environment.unset`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub env_unsets: Vec<String>,
 }
 
 /// Run a tests script after a response arrives.
@@ -210,6 +227,10 @@ struct State {
     response: ScriptResponse,
     env: HashMap<String, String>,
     env_updates: HashMap<String, String>,
+    /// Tombstones — names the script cleared. Distinct from a
+    /// `set(name, "")` so `has(name)` after `unset` returns `false`
+    /// while `has(name)` after `set(name, "")` returns `true`.
+    env_unsets: HashSet<String>,
     tests: Vec<TestResult>,
     body_modified: bool,
 }
@@ -228,6 +249,7 @@ impl Sandbox {
                 response: ScriptResponse::default(),
                 env,
                 env_updates: HashMap::new(),
+                env_unsets: HashSet::new(),
                 tests: Vec::new(),
                 body_modified: false,
             });
@@ -252,6 +274,7 @@ impl Sandbox {
             logs: state.logs,
             request: state.request,
             env_updates: state.env_updates,
+            env_unsets: state.env_unsets.into_iter().collect(),
             body_modified: state.body_modified,
         }
     }
@@ -264,6 +287,7 @@ impl Sandbox {
             logs: state.logs,
             tests: state.tests,
             env_updates: state.env_updates,
+            env_unsets: state.env_unsets.into_iter().collect(),
         }
     }
 
@@ -274,10 +298,14 @@ impl Sandbox {
         let warn_fn = NativeFunction::from_fn_ptr(bru_warn);
         let env_get_fn = NativeFunction::from_fn_ptr(bru_env_get);
         let env_set_fn = NativeFunction::from_fn_ptr(bru_env_set);
+        let env_unset_fn = NativeFunction::from_fn_ptr(bru_env_unset);
+        let env_has_fn = NativeFunction::from_fn_ptr(bru_env_has);
 
         let env_obj = ObjectInitializer::new(ctx)
             .function(env_get_fn, js_string!("get"), 1)
             .function(env_set_fn, js_string!("set"), 2)
+            .function(env_unset_fn, js_string!("unset"), 1)
+            .function(env_has_fn, js_string!("has"), 1)
             .build();
 
         let bru = ObjectInitializer::new(ctx)
@@ -304,6 +332,13 @@ impl Sandbox {
         // level it propagates to the host as a `ScriptError::Runtime`.
         ctx.eval(Source::from_bytes(BRU_FAIL_PRELUDE))
             .map_err(|e| ScriptError::Runtime(format!("bru.fail install: {e}")))?;
+
+        // `pm.*` Postman-compatibility shim — pure JS, delegates to bru.
+        // Tests-mode globals (pm.response, pm.test, pm.expect) are filled
+        // in by `install_response_globals` via the JS prelude, so this
+        // stub is enough for pre-request scripts too.
+        ctx.eval(Source::from_bytes(PM_PRELUDE))
+            .map_err(|e| ScriptError::Runtime(format!("pm install: {e}")))?;
         Ok(())
     }
 
@@ -402,6 +437,262 @@ bru.fail = function(message) {
   throw err;
 };
 ";
+
+/// Postman compatibility shim. Pure JS so we can iterate without
+/// touching Rust. `pm.environment` and request mutations delegate to
+/// the corresponding `bru.*` natives. `pm.collectionVariables` and
+/// `pm.globals` live as in-memory Maps for now — Argos doesn't have a
+/// distinct collection-vars or globals scope yet, but the API surface
+/// matches Postman so existing snippets can be pasted in.
+///
+/// `pm.expect` is a tiny Chai-like shim covering the patterns most
+/// Postman test snippets rely on:
+/// `.to.equal(x)`, `.to.eql(x)`, `.to.be.true`, `.to.be.false`,
+/// `.to.be.ok`, `.to.have.property(name [, value])`,
+/// `.to.have.status(code)`, `.to.include(x)` / `.to.contain(x)`.
+const PM_PRELUDE: &str = r#"
+(function () {
+  function inMemoryStore() {
+    var data = {};
+    return {
+      get: function (k) { return data[k]; },
+      set: function (k, v) { data[k] = String(v); },
+      unset: function (k) { delete data[k]; },
+      has: function (k) { return Object.prototype.hasOwnProperty.call(data, k); },
+      clear: function () { data = {}; },
+      toObject: function () {
+        var out = {}; for (var k in data) out[k] = data[k]; return out;
+      },
+    };
+  }
+
+  var pm = {};
+
+  // --- variables -----------------------------------------------------
+  pm.environment = {
+    get: function (k) {
+      var v = bru.env.get(k);
+      return v === undefined ? undefined : v;
+    },
+    set: function (k, v) { bru.env.set(String(k), v === undefined ? '' : String(v)); },
+    unset: function (k) { bru.env.unset(String(k)); },
+    has: function (k) { return !!bru.env.has(String(k)); },
+  };
+  pm.collectionVariables = inMemoryStore();
+  pm.globals = inMemoryStore();
+  // pm.variables.get walks the scope chain Postman uses
+  // (locals → environment → collection → globals). We don't have a
+  // distinct locals scope, so the order is environment → collection
+  // → globals.
+  pm.variables = {
+    get: function (k) {
+      var v = pm.environment.get(k);
+      if (v !== undefined) return v;
+      if (pm.collectionVariables.has(k)) return pm.collectionVariables.get(k);
+      if (pm.globals.has(k)) return pm.globals.get(k);
+      return undefined;
+    },
+    has: function (k) {
+      return pm.environment.has(k)
+          || pm.collectionVariables.has(k)
+          || pm.globals.has(k);
+    },
+    set: function (k, v) { pm.environment.set(k, v); },
+  };
+
+  // --- request -------------------------------------------------------
+  // pm.request reflects the current (mutable) wire shape. Properties
+  // are getters so a script that reads `pm.request.url` after calling
+  // `pm.request.url = '...'` (or our `setUrl`) sees the latest value.
+  function makeHeaderList() {
+    return {
+      add: function (entry) {
+        if (!entry) return;
+        var k = entry.key !== undefined ? entry.key : entry.name;
+        var v = entry.value;
+        if (k === undefined) return;
+        bru.req.setHeader(String(k), v === undefined ? '' : String(v));
+      },
+      upsert: function (entry) { this.add(entry); },
+      remove: function (k) { bru.req.removeHeader(String(k)); },
+      get: function (k) { return bru.req.getHeader(String(k)); },
+      has: function (k) { return bru.req.getHeader(String(k)) !== undefined; },
+    };
+  }
+
+  // bru.req is installed *after* this prelude (only in pre-request
+  // mode), so build pm.request as a getter that lazily reflects the
+  // current bru.req. Pre-request scripts get a live wrapper; tests
+  // scripts that touch pm.request hit a clear "not available" error
+  // (we can't mutate the wire request after it was sent).
+  function buildRequest() {
+    if (typeof bru.req !== 'object' || bru.req === null
+        || typeof bru.req.getUrl !== 'function') {
+      throw new Error('pm.request is only available in pre-request scripts');
+    }
+    return Object.create(null, {
+      url: {
+        get: function () { return bru.req.getUrl(); },
+        set: function (v) { bru.req.setUrl(String(v)); },
+        enumerable: true,
+      },
+      method: {
+        get: function () { return bru.req.getMethod(); },
+        set: function (v) { bru.req.setMethod(String(v)); },
+        enumerable: true,
+      },
+      headers: { value: makeHeaderList(), enumerable: true },
+      body: {
+        get: function () { return bru.req.getBody(); },
+        enumerable: true,
+      },
+    });
+  }
+  Object.defineProperty(pm, 'request', {
+    get: function () { return buildRequest(); },
+    enumerable: true,
+  });
+
+  // --- response (filled by the JS prelude in tests mode) -------------
+  // We define a getter that walks bru.res so pre-request scripts that
+  // accidentally touch pm.response get a clear error instead of
+  // `undefined.code`.
+  Object.defineProperty(pm, 'response', {
+    get: function () {
+      if (typeof bru.res !== 'object' || bru.res === null
+          || typeof bru.res.status !== 'number') {
+        throw new Error('pm.response is only available in tests scripts');
+      }
+      var body = bru.res.body;
+      return {
+        code: bru.res.status,
+        status: bru.res.status,
+        text: function () { return body; },
+        json: function () { return bru.res.json(); },
+        headers: {
+          get: function (k) { return bru.res.getHeader(String(k)); },
+          has: function (k) { return bru.res.getHeader(String(k)) !== undefined; },
+        },
+        to: undefined, // see pm.expect below — we don't expose chai on response itself
+      };
+    },
+    enumerable: true,
+  });
+
+  // --- test / expect -------------------------------------------------
+  pm.test = function (name, fn) {
+    if (typeof bru.test !== 'function') {
+      // Pre-request mode: tests aren't recorded — surface as a script
+      // error so the user knows the snippet was meant for tests scope.
+      throw new Error('pm.test is only available in tests scripts');
+    }
+    return bru.test(String(name), fn);
+  };
+
+  function fail(msg) { throw new Error(msg); }
+  function describe(v) {
+    try { return JSON.stringify(v); } catch (_) { return String(v); }
+  }
+  function isObject(v) {
+    return v !== null && (typeof v === 'object' || typeof v === 'function');
+  }
+
+  function buildBe(actual) {
+    return {
+      ok: function () {
+        if (!actual) fail('Expected ' + describe(actual) + ' to be ok (truthy)');
+      },
+      // Object getters mirror Chai's chainable property style for the
+      // common boolean assertions. Accessing `.true` runs the check.
+      get true() {
+        if (actual !== true) fail('Expected ' + describe(actual) + ' to be true');
+      },
+      get false() {
+        if (actual !== false) fail('Expected ' + describe(actual) + ' to be false');
+      },
+      get null() {
+        if (actual !== null) fail('Expected ' + describe(actual) + ' to be null');
+      },
+      get undefined() {
+        if (actual !== undefined) fail('Expected ' + describe(actual) + ' to be undefined');
+      },
+      a: function (typeName) {
+        if (typeof actual !== String(typeName)) {
+          fail('Expected ' + describe(actual) + ' to be a ' + typeName);
+        }
+      },
+    };
+  }
+
+  function buildHave(actual) {
+    return {
+      property: function (name, expectedValue) {
+        if (!isObject(actual) || !(String(name) in actual)) {
+          fail('Expected ' + describe(actual) + ' to have property ' + describe(name));
+        }
+        if (arguments.length >= 2) {
+          var got = actual[String(name)];
+          if (JSON.stringify(got) !== JSON.stringify(expectedValue)) {
+            fail('Expected property ' + describe(name) + ' to equal '
+                 + describe(expectedValue) + ', got ' + describe(got));
+          }
+        }
+      },
+      status: function (code) {
+        if (actual !== code) {
+          fail('Expected status ' + describe(code) + ', got ' + describe(actual));
+        }
+      },
+      lengthOf: function (n) {
+        if (!actual || typeof actual.length !== 'number' || actual.length !== n) {
+          fail('Expected ' + describe(actual) + ' to have length ' + n);
+        }
+      },
+    };
+  }
+
+  function buildTo(actual) {
+    return {
+      equal: function (expected) {
+        if (!Object.is(actual, expected)) {
+          fail('Expected ' + describe(actual) + ' to equal ' + describe(expected));
+        }
+      },
+      eql: function (expected) {
+        if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+          fail('Expected ' + describe(actual) + ' to deep-equal ' + describe(expected));
+        }
+      },
+      include: function (needle) {
+        var ok =
+          (typeof actual === 'string' && actual.indexOf(needle) >= 0) ||
+          (Array.isArray(actual) && actual.indexOf(needle) >= 0) ||
+          (isObject(actual) && Object.prototype.hasOwnProperty.call(actual, needle));
+        if (!ok) fail('Expected ' + describe(actual) + ' to include ' + describe(needle));
+      },
+      contain: function (needle) { this.include(needle); },
+      match: function (re) {
+        if (!(re instanceof RegExp)) re = new RegExp(String(re));
+        if (typeof actual !== 'string' || !re.test(actual)) {
+          fail('Expected ' + describe(actual) + ' to match ' + re);
+        }
+      },
+      get be() { return buildBe(actual); },
+      get have() { return buildHave(actual); },
+    };
+  }
+
+  pm.expect = function (actual) {
+    return Object.create(null, {
+      to: { get: function () { return buildTo(actual); }, enumerable: true },
+    });
+  };
+
+  // Expose pm as a bare global so scripts can `pm.environment.get(...)`
+  // verbatim from Postman docs.
+  globalThis.pm = pm;
+})();
+"#;
 
 const JS_PRELUDE: &str = r"
 (function() {
@@ -502,6 +793,9 @@ fn bru_env_get(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult
         .to_string(ctx)?
         .to_std_string_escaped();
     let value = with_state(ctx, |s| {
+        if s.env_unsets.contains(&name) {
+            return None;
+        }
         s.env_updates
             .get(&name)
             .or_else(|| s.env.get(&name))
@@ -520,9 +814,37 @@ fn bru_env_set(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult
         .to_string(ctx)?
         .to_std_string_escaped();
     with_state(ctx, |s| {
+        // A subsequent `set` after `unset` revives the key.
+        s.env_unsets.remove(&name);
         s.env_updates.insert(name, value);
     });
     Ok(JsValue::undefined())
+}
+
+fn bru_env_unset(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let name = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
+    with_state(ctx, |s| {
+        s.env_updates.remove(&name);
+        s.env_unsets.insert(name);
+    });
+    Ok(JsValue::undefined())
+}
+
+fn bru_env_has(_this: &JsValue, args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
+    let name = args
+        .get_or_undefined(0)
+        .to_string(ctx)?
+        .to_std_string_escaped();
+    let present = with_state(ctx, |s| {
+        if s.env_unsets.contains(&name) {
+            return false;
+        }
+        s.env_updates.contains_key(&name) || s.env.contains_key(&name)
+    });
+    Ok(JsValue::from(present))
 }
 
 fn bru_req_get_url(_this: &JsValue, _args: &[JsValue], ctx: &mut Context) -> JsResult<JsValue> {
@@ -1141,6 +1463,282 @@ mod tests {
         ";
         let out = run_pre_request(script, req(), HashMap::new()).unwrap();
         assert_eq!(out.logs, vec!["null".to_string()]);
+    }
+
+    // ---- pm.* compatibility shim ----------------------------------------
+
+    #[test]
+    fn pm_environment_get_set_unset_has() {
+        let mut env = HashMap::new();
+        env.insert("token".into(), "abc".into());
+        let script = r"
+            bru.log(pm.environment.get('token'));
+            bru.log(String(pm.environment.has('token')));
+            pm.environment.set('user', 'alice');
+            bru.log(pm.environment.get('user'));
+            pm.environment.unset('token');
+            bru.log(String(pm.environment.has('token')));
+        ";
+        let out = run_pre_request(script, req(), env).unwrap();
+        assert_eq!(
+            out.logs,
+            vec![
+                "abc".to_string(),
+                "true".to_string(),
+                "alice".to_string(),
+                "false".to_string(),
+            ]
+        );
+        assert_eq!(
+            out.env_updates.get("user").map(String::as_str),
+            Some("alice")
+        );
+        // unset → tombstone, NOT an empty-string update.
+        assert!(!out.env_updates.contains_key("token"));
+        assert_eq!(out.env_unsets, vec!["token".to_string()]);
+    }
+
+    #[test]
+    fn env_empty_string_is_distinct_from_unset() {
+        // Set-to-empty must report `has(name) === true`; unset must
+        // report `false`. Regression test for the tombstone fix.
+        let script = r"
+            pm.environment.set('a', '');
+            pm.environment.unset('b');
+            bru.log(String(pm.environment.has('a')));
+            bru.log(String(pm.environment.has('b')));
+            bru.log(String(pm.environment.get('a')));
+            bru.log(String(pm.environment.get('b')));
+        ";
+        let mut env = HashMap::new();
+        env.insert("b".into(), "was-here".into());
+        let out = run_pre_request(script, req(), env).unwrap();
+        assert_eq!(
+            out.logs,
+            vec![
+                "true".to_string(),
+                "false".to_string(),
+                String::new(),
+                "undefined".to_string(),
+            ]
+        );
+        assert_eq!(out.env_updates.get("a").map(String::as_str), Some(""));
+        assert!(!out.env_updates.contains_key("b"));
+        assert_eq!(out.env_unsets, vec!["b".to_string()]);
+    }
+
+    #[test]
+    fn env_set_after_unset_revives_key() {
+        let script = r"
+            pm.environment.unset('token');
+            pm.environment.set('token', 'v2');
+            bru.log(String(pm.environment.has('token')));
+            bru.log(pm.environment.get('token'));
+        ";
+        let mut env = HashMap::new();
+        env.insert("token".into(), "v1".into());
+        let out = run_pre_request(script, req(), env).unwrap();
+        assert_eq!(out.logs, vec!["true".to_string(), "v2".to_string()]);
+        assert!(out.env_unsets.is_empty());
+        assert_eq!(out.env_updates.get("token").map(String::as_str), Some("v2"));
+    }
+
+    #[test]
+    fn pm_collection_variables_and_globals_in_memory() {
+        let script = r"
+            pm.collectionVariables.set('region', 'eu');
+            pm.globals.set('api', 'v2');
+            bru.log(pm.collectionVariables.get('region'));
+            bru.log(pm.globals.get('api'));
+            bru.log(String(pm.collectionVariables.has('missing')));
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        assert_eq!(
+            out.logs,
+            vec!["eu".to_string(), "v2".to_string(), "false".to_string(),]
+        );
+        // These scopes are in-memory only — not propagated through env_updates.
+        assert!(out.env_updates.is_empty());
+    }
+
+    #[test]
+    fn pm_variables_chain_falls_back_to_collection_then_globals() {
+        let script = r"
+            pm.collectionVariables.set('x', 'col');
+            pm.globals.set('y', 'glob');
+            bru.log(pm.variables.get('x'));
+            bru.log(pm.variables.get('y'));
+            bru.log(String(pm.variables.has('z')));
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        assert_eq!(
+            out.logs,
+            vec!["col".to_string(), "glob".to_string(), "false".to_string(),]
+        );
+    }
+
+    #[test]
+    fn pm_request_mutations_round_trip_to_outcome() {
+        let script = r"
+            pm.request.url = 'https://example.com/v3';
+            pm.request.method = 'put';
+            pm.request.headers.add({ key: 'X-Tenant', value: 't1' });
+            pm.request.headers.upsert({ key: 'X-Tenant', value: 't2' });
+            pm.request.headers.remove('X-Other');
+            bru.log(pm.request.url);
+            bru.log(pm.request.method);
+        ";
+        let mut r = req();
+        r.headers.push(ScriptHeader {
+            name: "X-Other".into(),
+            value: "remove-me".into(),
+        });
+        let out = run_pre_request(script, r, HashMap::new()).unwrap();
+        assert_eq!(out.request.url, "https://example.com/v3");
+        assert_eq!(out.request.method, "PUT");
+        // X-Tenant was added then upserted to t2; X-Other was removed.
+        let names: Vec<_> = out
+            .request
+            .headers
+            .iter()
+            .map(|h| h.name.as_str())
+            .collect();
+        assert!(names.contains(&"X-Tenant"));
+        assert!(!names.contains(&"X-Other"));
+        let tenant = out
+            .request
+            .headers
+            .iter()
+            .find(|h| h.name == "X-Tenant")
+            .map(|h| h.value.as_str())
+            .unwrap();
+        assert_eq!(tenant, "t2");
+        assert_eq!(out.logs[0], "https://example.com/v3");
+        assert_eq!(out.logs[1], "PUT");
+    }
+
+    #[test]
+    fn pm_response_unavailable_in_pre_request() {
+        let script = r"
+            try {
+                pm.response.code;
+                bru.log('NO_THROW');
+            } catch (e) {
+                bru.log(e.message);
+            }
+        ";
+        let out = run_pre_request(script, req(), HashMap::new()).unwrap();
+        assert_eq!(out.logs.len(), 1);
+        assert!(
+            out.logs[0].contains("only available in tests"),
+            "unexpected message: {}",
+            out.logs[0]
+        );
+    }
+
+    #[test]
+    fn pm_test_unavailable_in_pre_request() {
+        let err = run_pre_request("pm.test('x', () => {});", req(), HashMap::new()).unwrap_err();
+        assert!(err.to_string().contains("only available in tests"));
+    }
+
+    #[test]
+    fn pm_test_and_expect_in_tests_mode() {
+        let script = r"
+            pm.test('Status code is 200', function () {
+                pm.expect(pm.response.code).to.equal(200);
+            });
+            pm.test('Body has greeting', function () {
+                var data = pm.response.json();
+                pm.expect(data).to.have.property('greeting', 'hello');
+            });
+            pm.test('Content-Type is JSON', function () {
+                pm.expect(pm.response.headers.get('content-type')).to.include('application/json');
+            });
+        ";
+        let res = ScriptResponse {
+            status: 200,
+            body: r#"{"greeting":"hello"}"#.to_string(),
+            headers: vec![ScriptHeader {
+                name: "Content-Type".into(),
+                value: "application/json; charset=utf-8".into(),
+            }],
+        };
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+        assert_eq!(out.tests.len(), 3);
+        assert!(out.tests.iter().all(|t| t.passed), "tests: {:?}", out.tests);
+    }
+
+    #[test]
+    fn pm_expect_chai_chains() {
+        let script = r"
+            pm.test('be.true', function () { pm.expect(true).to.be.true; });
+            pm.test('be.false', function () { pm.expect(false).to.be.false; });
+            pm.test('be.null', function () { pm.expect(null).to.be.null; });
+            pm.test('be.ok', function () { pm.expect(1).to.be.ok(); });
+            pm.test('be.a', function () { pm.expect('s').to.be.a('string'); });
+            pm.test('eql', function () { pm.expect({a:1}).to.eql({a:1}); });
+            pm.test('match', function () { pm.expect('argos-12').to.match(/argos-\d+/); });
+            pm.test('lengthOf', function () { pm.expect([1,2,3]).to.have.lengthOf(3); });
+            pm.test('have.status', function () { pm.expect(pm.response.code).to.have.status(204); });
+        ";
+        let res = ScriptResponse {
+            status: 204,
+            body: String::new(),
+            headers: vec![],
+        };
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+        assert_eq!(out.tests.len(), 9);
+        for t in &out.tests {
+            assert!(t.passed, "expected {} to pass: {}", t.name, t.message);
+        }
+    }
+
+    #[test]
+    fn pm_expect_failures_carry_diff_messages() {
+        let script = r"
+            pm.test('equal mismatch', function () { pm.expect(1).to.equal(2); });
+            pm.test('include mismatch', function () { pm.expect('hello').to.include('world'); });
+            pm.test('property missing', function () { pm.expect({}).to.have.property('id'); });
+        ";
+        let res = ScriptResponse {
+            status: 200,
+            body: "{}".into(),
+            headers: vec![],
+        };
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+        assert_eq!(out.tests.len(), 3);
+        for t in &out.tests {
+            assert!(!t.passed, "{} should have failed", t.name);
+        }
+        assert!(out.tests[0].message.contains("to equal"));
+        assert!(out.tests[1].message.contains("to include"));
+        assert!(out.tests[2].message.contains("property"));
+    }
+
+    #[test]
+    fn pm_postman_snippet_set_bearer_from_login_response() {
+        // Canonical Postman snippet: read access_token from the login
+        // response and store it in the env for downstream requests.
+        let script = r"
+            pm.test('login returns token', function () {
+                var data = pm.response.json();
+                pm.expect(data).to.have.property('access_token');
+                pm.environment.set('token', data.access_token);
+            });
+        ";
+        let res = ScriptResponse {
+            status: 200,
+            body: r#"{"access_token":"jwt-abc"}"#.into(),
+            headers: vec![],
+        };
+        let out = run_tests(script, res, HashMap::new()).unwrap();
+        assert_eq!(out.tests.len(), 1);
+        assert!(out.tests[0].passed);
+        assert_eq!(
+            out.env_updates.get("token").map(String::as_str),
+            Some("jwt-abc")
+        );
     }
 
     #[test]
