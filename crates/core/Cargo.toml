@@ -26,6 +26,7 @@ chrono = { workspace = true }
 url = { workspace = true }
 bytes = { workspace = true }
 mime = { workspace = true }
+shlex = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

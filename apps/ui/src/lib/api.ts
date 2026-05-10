@@ -72,6 +72,11 @@ export async function requestToCurl(
   return invokeCommand<string>('request_to_curl', { req, env });
 }
 
+/** Parse a pasted `curl` command into a wire request. */
+export async function curlToRequest(input: string): Promise<HttpRequest> {
+  return invokeCommand<HttpRequest>('curl_to_request', { input });
+}
+
 // ---- workspace ----------------------------------------------------------
 
 export async function workspaceOpen(path: string): Promise<Workspace> {
