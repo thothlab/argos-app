@@ -136,6 +136,25 @@ export function openOrFocusTabForRequest(path: string, draft: RequestDraft): voi
     r.url = draft.url;
     r.headers = draft.headers.map((h) => ({ name: h.name, value: h.value, enabled: h.enabled }));
     r.query = draft.query.map((q) => ({ name: q.name, value: q.value, enabled: q.enabled }));
+
+    // auth — map on-disk AuthConfig to DraftAuth.
+    if (!draft.auth) {
+      r.auth = { kind: 'none' };
+    } else if (draft.auth.type === 'inherit') {
+      r.auth = { kind: 'inherit' };
+    } else if (draft.auth.type === 'bearer') {
+      r.auth = { kind: 'bearer', token: draft.auth.token };
+    } else if (draft.auth.type === 'basic') {
+      r.auth = { kind: 'basic', username: draft.auth.username, password: draft.auth.password };
+    } else if (draft.auth.type === 'api_key') {
+      r.auth = {
+        kind: 'api_key',
+        name: draft.auth.name,
+        value: draft.auth.value,
+        location: draft.auth.location,
+      };
+    }
+
     if (!draft.body) {
       r.bodyKind = 'none';
       r.bodyText = '';
@@ -196,11 +215,31 @@ export function tabAsDraft(tabId: string): RequestDraft | null {
     query: r.query
       .filter((q) => q.name.length > 0)
       .map((q) => ({ name: q.name, value: q.value, enabled: q.enabled })),
-    auth: null,
+    auth: buildAuth(r),
     body: buildBody(r),
     scripts: { pre_request: null, tests: null },
     schema_ref: null,
   };
+}
+
+function buildAuth(r: DraftRequest): RequestDraft['auth'] {
+  switch (r.auth.kind) {
+    case 'none':
+      return null;
+    case 'inherit':
+      return { type: 'inherit' };
+    case 'bearer':
+      return { type: 'bearer', token: r.auth.token };
+    case 'basic':
+      return { type: 'basic', username: r.auth.username, password: r.auth.password };
+    case 'api_key':
+      return {
+        type: 'api_key',
+        name: r.auth.name,
+        value: r.auth.value,
+        location: r.auth.location,
+      };
+  }
 }
 
 function buildBody(r: DraftRequest | null): RequestDraft['body'] {

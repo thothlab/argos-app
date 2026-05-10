@@ -26,11 +26,21 @@ import type { HttpBody, HttpMethod, HttpRequest, HttpResponse } from '../types/h
 
 export type DraftBodyKind = 'none' | 'text' | 'json' | 'form';
 
+export type ApiKeyLocation = 'header' | 'query' | 'cookie';
+
+export type DraftAuth =
+  | { kind: 'none' }
+  | { kind: 'inherit' }
+  | { kind: 'bearer'; token: string }
+  | { kind: 'basic'; username: string; password: string }
+  | { kind: 'api_key'; name: string; value: string; location: ApiKeyLocation };
+
 export type DraftRequest = {
   method: HttpMethod;
   url: string;
   headers: RowEntry[];
   query: RowEntry[];
+  auth: DraftAuth;
   bodyKind: DraftBodyKind;
   bodyText: string;
   bodyContentType: string;
@@ -55,6 +65,7 @@ export function emptyDraft(method: HttpMethod = 'GET'): DraftRequest {
     url: '',
     headers: [],
     query: [],
+    auth: { kind: 'none' },
     bodyKind: 'none',
     bodyText: '',
     bodyContentType: 'application/json',
@@ -167,6 +178,11 @@ export function setBodyContentType(tabId: string, ct: string): void {
   setTabStatesRaw(tabId, 'request', 'bodyContentType', ct);
 }
 
+export function setAuth(tabId: string, auth: DraftAuth): void {
+  if (!tabStates[tabId]) return;
+  setTabStatesRaw(tabId, 'request', 'auth', auth);
+}
+
 export function setResponse(tabId: string, response: ResponseState): void {
   if (!tabStates[tabId]) return;
   setTabStatesRaw(tabId, 'response', response);
@@ -186,19 +202,64 @@ export function setResponse(tabId: string, response: ResponseState): void {
  * `query_pairs_mut` would otherwise produce.
  */
 export function toWireRequest(draft: DraftRequest): HttpRequest {
+  // Apply auth: bearer / basic / api-key are folded into the existing
+  // header/query lists *before* substitution. 'inherit' is a no-op at
+  // this level — folder-level auth resolution lands in the workspace
+  // tree walker (E3 polish). 'none' is also a no-op.
+  const headers: Array<{ name: string; value: string }> = draft.headers
+    .filter((r) => r.enabled && r.name.length > 0)
+    .map((r) => ({ name: r.name, value: r.value }));
+
+  const queryParams: Array<{ name: string; value: string; enabled: boolean }> = draft.query
+    .filter((r) => r.enabled && r.name.length > 0)
+    .map((r) => ({ name: r.name, value: r.value, enabled: true }));
+
+  switch (draft.auth.kind) {
+    case 'bearer':
+      if (draft.auth.token) {
+        headers.push({ name: 'Authorization', value: `Bearer ${draft.auth.token}` });
+      }
+      break;
+    case 'basic': {
+      const creds = `${draft.auth.username}:${draft.auth.password}`;
+      headers.push({ name: 'Authorization', value: `Basic ${btoa(creds)}` });
+      break;
+    }
+    case 'api_key':
+      if (draft.auth.location === 'header') {
+        headers.push({ name: draft.auth.name, value: draft.auth.value });
+      } else if (draft.auth.location === 'query') {
+        queryParams.push({ name: draft.auth.name, value: draft.auth.value, enabled: true });
+      } else if (draft.auth.location === 'cookie') {
+        // Append to existing Cookie header or create one.
+        const existing = headers.find((h) => h.name.toLowerCase() === 'cookie');
+        const pair = `${draft.auth.name}=${draft.auth.value}`;
+        if (existing) {
+          existing.value = `${existing.value}; ${pair}`;
+        } else {
+          headers.push({ name: 'Cookie', value: pair });
+        }
+      }
+      break;
+    case 'inherit':
+    case 'none':
+      break;
+  }
+
   return {
     method: draft.method,
-    url: buildFullUrl(draft.url, draft.query),
-    headers: draft.headers
-      .filter((r) => r.enabled && r.name.length > 0)
-      .map((r) => ({ name: r.name, value: r.value })),
+    url: buildFullUrl(draft.url, queryParams),
+    headers,
     query: [],
     body: buildBody(draft),
     timeout: null,
   };
 }
 
-function buildFullUrl(baseUrl: string, query: RowEntry[]): string {
+function buildFullUrl(
+  baseUrl: string,
+  query: Array<{ name: string; value: string; enabled: boolean }>,
+): string {
   const enabled = query.filter((r) => r.enabled && r.name.length > 0);
   if (enabled.length === 0) return baseUrl;
   const sep = baseUrl.includes('?') ? '&' : '?';
