@@ -204,9 +204,9 @@ function ScriptsTab() {
       />
       <ScriptBlock
         title="Tests"
-        hint="Reserved — runs after the response arrives. The bru.test() / bru.expect() API ships in the next chunk."
+        hint="Runs after the response arrives. Use bru.test(name, fn) and bru.expect(value).toBe / .toEqual / .toBeTruthy / .toContain. Read response via bru.res.status / .body / .json() / .getHeader()."
         value={draft()?.tests ?? ''}
-        placeholder={`// Coming soon:\n// bru.test('Status is 200', () => bru.expect(bru.res.status).toBe(200));\n`}
+        placeholder={`bru.test('Status is 200', () => {\n  bru.expect(bru.res.status).toBe(200);\n});\n`}
         onInput={(v) => {
           const tabId = id();
           if (tabId) setTests(tabId, v);

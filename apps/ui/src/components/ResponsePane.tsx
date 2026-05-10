@@ -14,8 +14,9 @@
 
 import { createMemo, createSignal, For, Match, Show, Switch } from 'solid-js';
 
-import { CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-solid';
+import { Beaker, CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-solid';
 
+import type { TestResult } from '../lib/api';
 import { bytesToDataUrl } from '../lib/bytes';
 import { getResponse } from '../stores/request';
 import { activeTabId } from '../stores/tabs';
@@ -30,7 +31,7 @@ import HexViewer from './HexViewer';
 
 const LARGE_BODY_BYTES = 200_000;
 
-type BodyTab = 'body' | 'headers' | 'timing';
+type BodyTab = 'body' | 'headers' | 'timing' | 'tests';
 
 export default function ResponsePane() {
   const tabId = activeTabId;
@@ -57,7 +58,14 @@ export default function ResponsePane() {
         <Match when={state().status === 'ok'}>
           {(_) => {
             const s = state() as Extract<ReturnType<typeof state>, { status: 'ok' }>;
-            return <OkPane response={s.response} />;
+            return (
+              <OkPane
+                response={s.response}
+                tests={s.tests ?? []}
+                preRequestLogs={s.preRequestLogs ?? []}
+                testsLogs={s.testsLogs ?? []}
+              />
+            );
           }}
         </Match>
       </Switch>
@@ -97,10 +105,17 @@ function ErrorPane(props: { message: string }) {
   );
 }
 
-function OkPane(props: { response: HttpResponse }) {
+function OkPane(props: {
+  response: HttpResponse;
+  tests: TestResult[];
+  preRequestLogs: string[];
+  testsLogs: string[];
+}) {
   const [activePane, setActivePane] = createSignal<BodyTab>('body');
 
   const r = () => props.response;
+  const passedCount = () => props.tests.filter((t) => t.passed).length;
+  const failedCount = () => props.tests.filter((t) => !t.passed).length;
   const statusColor = () => {
     const s = r().status;
     if (s >= 500) return 'var(--color-error-foreground)';
@@ -149,6 +164,7 @@ function OkPane(props: { response: HttpResponse }) {
           { id: 'body' as BodyTab, label: 'Body' },
           { id: 'headers' as BodyTab, label: 'Headers' },
           { id: 'timing' as BodyTab, label: 'Timing' },
+          { id: 'tests' as BodyTab, label: 'Tests' },
         ]}>
           {(t) => (
             <button
@@ -165,6 +181,23 @@ function OkPane(props: { response: HttpResponse }) {
                 <Show when={t.id === 'headers'}>
                   <span class="rounded-full bg-bg-secondary px-1.5 font-mono text-[10px] text-fg-secondary">
                     {r().headers.length}
+                  </span>
+                </Show>
+                <Show when={t.id === 'tests' && props.tests.length > 0}>
+                  <span
+                    class="flex items-center gap-1 rounded-full px-1.5 font-mono text-[10px]"
+                    style={{
+                      background:
+                        failedCount() > 0
+                          ? 'color-mix(in srgb, var(--color-error-foreground) 15%, transparent)'
+                          : 'color-mix(in srgb, var(--color-success-foreground) 15%, transparent)',
+                      color:
+                        failedCount() > 0
+                          ? 'var(--color-error-foreground)'
+                          : 'var(--color-success-foreground)',
+                    }}
+                  >
+                    {passedCount()}/{props.tests.length}
                   </span>
                 </Show>
               </span>
@@ -187,9 +220,65 @@ function OkPane(props: { response: HttpResponse }) {
           <Match when={activePane() === 'timing'}>
             <TimingView timing={r().timing} />
           </Match>
+          <Match when={activePane() === 'tests'}>
+            <TestsView
+              tests={props.tests}
+              preRequestLogs={props.preRequestLogs}
+              testsLogs={props.testsLogs}
+            />
+          </Match>
         </Switch>
       </div>
     </>
+  );
+}
+
+function TestsView(props: {
+  tests: TestResult[];
+  preRequestLogs: string[];
+  testsLogs: string[];
+}) {
+  return (
+    <div class="flex flex-col gap-4 p-4">
+      <Show
+        when={props.tests.length > 0}
+        fallback={
+          <div class="flex items-center gap-2 text-[12px] text-fg-secondary">
+            <Beaker size={14} />
+            No tests defined. Add a Tests script in the request editor to run
+            assertions against the response.
+          </div>
+        }
+      >
+        <ul class="flex flex-col gap-1.5">
+          <For each={props.tests}>
+            {(t) => (
+              <li class="flex items-start gap-2 rounded border border-border bg-bg-card px-3 py-2">
+                <Show when={t.passed} fallback={<XCircle size={14} class="mt-0.5 text-[var(--color-error-foreground)]" />}>
+                  <CheckCircle2 size={14} class="mt-0.5 text-[var(--color-success-foreground)]" />
+                </Show>
+                <div class="min-w-0 flex-1">
+                  <p class="font-mono text-[12px] text-fg-primary">{t.name}</p>
+                  <Show when={!t.passed && t.message}>
+                    <p class="mt-0.5 break-all font-mono text-[11px] text-[var(--color-error-foreground)]">
+                      {t.message}
+                    </p>
+                  </Show>
+                </div>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+      <Show when={props.preRequestLogs.length + props.testsLogs.length > 0}>
+        <div>
+          <h4 class="mb-1 text-[11px] uppercase tracking-wide text-fg-secondary">Console</h4>
+          <pre class="m-0 whitespace-pre-wrap rounded border border-border bg-bg-secondary p-3 font-mono text-[11px] text-fg-primary">
+            {[...props.preRequestLogs.map((l) => `[pre] ${l}`), ...props.testsLogs.map((l) => `[tests] ${l}`)].join('\n')}
+          </pre>
+        </div>
+      </Show>
+    </div>
   );
 }
 

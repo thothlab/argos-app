@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use argos_core::codegen::curl;
 use argos_core::format::{slugify, Environment, Folder, RequestDraft};
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
-use argos_scripting::{run_pre_request, ScriptHeader, ScriptRequest};
+use argos_scripting::{
+    run_pre_request, run_tests, ScriptHeader, ScriptRequest, ScriptResponse, TestResult,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::sync::OnceCell;
@@ -52,6 +54,8 @@ fn ping() -> &'static str {
 pub struct SendOutcome {
     pub response: HttpResponse,
     pub pre_request_logs: Vec<String>,
+    pub tests_logs: Vec<String>,
+    pub tests: Vec<TestResult>,
     pub env_updates: HashMap<String, String>,
 }
 
@@ -70,6 +74,7 @@ async fn send_request(
     req: HttpRequest,
     env: Option<HashMap<String, String>>,
     pre_request_script: Option<String>,
+    tests_script: Option<String>,
 ) -> Result<SendOutcome, String> {
     let mut env = env.unwrap_or_default();
     let mut pre_request_logs = Vec::new();
@@ -111,12 +116,38 @@ async fn send_request(
         }
     }
 
-    let resolved = resolve_request(req, env);
+    let resolved = resolve_request(req, env.clone());
     let client = http_client(&state).await?;
     let response = client.execute(&resolved).await.map_err(|e| e.to_string())?;
+
+    let mut tests_logs = Vec::new();
+    let mut tests = Vec::new();
+    if let Some(script) = tests_script.as_ref().filter(|s| !s.trim().is_empty()) {
+        let script_res = ScriptResponse {
+            status: response.status,
+            body: String::from_utf8_lossy(&response.body.bytes).to_string(),
+            headers: response
+                .headers
+                .iter()
+                .map(|h| ScriptHeader {
+                    name: h.name.clone(),
+                    value: h.value.clone(),
+                })
+                .collect(),
+        };
+        let outcome = run_tests(script, script_res, env).map_err(|e| e.to_string())?;
+        tests_logs = outcome.logs;
+        tests = outcome.tests;
+        for (k, v) in outcome.env_updates {
+            env_updates.insert(k, v);
+        }
+    }
+
     Ok(SendOutcome {
         response,
         pre_request_logs,
+        tests_logs,
+        tests,
         env_updates,
     })
 }
