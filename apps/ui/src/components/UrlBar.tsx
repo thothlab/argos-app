@@ -46,10 +46,14 @@ export default function UrlBar() {
     const wire = toWireRequest(merged);
     const env = activeEnvVars();
     setResponse(tabId, { status: 'loading', startedAt: Date.now() });
+    const ws = workspace();
+    const persist =
+      ws && tab?.path ? { workspaceRoot: ws.root, requestPath: tab.path } : undefined;
+
     sendRequest(wire, env)
       .then((response) => {
         setResponse(tabId, { status: 'ok', response });
-        recordRun(tabId, wire, response);
+        recordRun(tabId, wire, response, persist);
       })
       .catch((e: unknown) => setResponse(tabId, { status: 'error', message: String(e) }));
   }

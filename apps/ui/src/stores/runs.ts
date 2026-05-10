@@ -7,18 +7,18 @@
  * through "what did I send earlier in this session" and click any past run
  * to load its response back into the response pane.
  *
- * v0.1 — **in-memory only**. Disk persistence (`<workspace>/runs/<request-id>/<ts>.json`)
- * lands in E2 once the workspace concept exists. We keep the API surface
- * stable so the move to disk is a localised change.
+ * Runs for tabs backed by a workspace request file are also persisted to
+ * `<workspace>/runs/<request-key>.json` (newest first, capped at 100).
+ * Scratch tabs (no `path`) stay in-memory only.
  *
- * Cap: 100 runs per tab. Older runs are dropped FIFO. The cap matches the
- * default retention from the BRD; configurable via settings in T1.5
- * follow-up.
+ * Cap: 100 runs per tab. Older runs are dropped FIFO.
  */
 
 import { createStore, produce } from 'solid-js/store';
 import { nanoid } from 'nanoid';
 
+import { runClear as runClearRpc, runLoad, runRecord } from '../lib/api';
+import { isTauri } from '../lib/tauri';
 import type { HttpRequest, HttpResponse } from '../types/http';
 
 export type Run = {
@@ -48,7 +48,14 @@ export function latestRun(tabId: string): Run | null {
   return list[0] ?? null;
 }
 
-export function recordRun(tabId: string, request: HttpRequest, response: HttpResponse): Run {
+export type PersistKey = { workspaceRoot: string; requestPath: string };
+
+export function recordRun(
+  tabId: string,
+  request: HttpRequest,
+  response: HttpResponse,
+  persist?: PersistKey,
+): Run {
   const run: Run = {
     id: nanoid(8),
     tabId,
@@ -64,15 +71,48 @@ export function recordRun(tabId: string, request: HttpRequest, response: HttpRes
       s[tabId] = list;
     }),
   );
+  if (persist && isTauri()) {
+    void runRecord(persist.workspaceRoot, persist.requestPath, {
+      id: run.id,
+      started_at_ms: run.startedAt,
+      request: run.request,
+      response: run.response,
+    });
+  }
   return run;
 }
 
-export function clearRuns(tabId: string): void {
+/** Replace the in-memory list for a tab with on-disk runs, if any. */
+export async function hydrateRuns(tabId: string, persist: PersistKey): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const persisted = await runLoad(persist.workspaceRoot, persist.requestPath);
+    const runs: Run[] = persisted.map((p) => ({
+      id: p.id,
+      tabId,
+      startedAt: p.started_at_ms,
+      request: p.request,
+      response: p.response,
+    }));
+    setRunStore(
+      produce((s) => {
+        s[tabId] = runs;
+      }),
+    );
+  } catch {
+    // Best-effort hydrate; corrupt run files shouldn't block opening a tab.
+  }
+}
+
+export function clearRuns(tabId: string, persist?: PersistKey): void {
   setRunStore(
     produce((s) => {
       delete s[tabId];
     }),
   );
+  if (persist && isTauri()) {
+    void runClearRpc(persist.workspaceRoot, persist.requestPath);
+  }
 }
 
 export function findRun(tabId: string, runId: string): Run | null {
