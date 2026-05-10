@@ -15,7 +15,8 @@ import { createSignal } from 'solid-js';
 import { nanoid } from 'nanoid';
 
 import { dropTabState, getRequest, initTabState, patchRequest, type DraftRequest } from './request';
-import { clearRuns } from './runs';
+import { clearRuns, hydrateRuns } from './runs';
+import { workspace } from './workspace';
 import type { HttpMethod } from '../types/http';
 import type { RequestDraft } from '../types/workspace';
 
@@ -179,6 +180,14 @@ export function openOrFocusTabForRequest(path: string, draft: RequestDraft): voi
 
   setTabs((list) => [...list, tab]);
   setActiveTabId(tab.id);
+
+  // Pull persisted runs (if the workspace is loaded) into the in-memory
+  // history. Best-effort — if the runs file is missing or corrupt the
+  // tab still opens cleanly.
+  const ws = workspace();
+  if (ws) {
+    void hydrateRuns(tab.id, { workspaceRoot: ws.root, requestPath: path });
+  }
 }
 
 export function moveTab(id: string, toIndex: number): void {

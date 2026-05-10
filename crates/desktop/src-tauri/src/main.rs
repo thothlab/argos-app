@@ -206,6 +206,108 @@ fn environment_delete(path: String) -> Result<(), String> {
     std::fs::remove_file(p).map_err(|e| e.to_string())
 }
 
+// ---- run history ---------------------------------------------------------
+
+/// Persisted run record. Uses opaque JSON values for `request` / `response`
+/// so we don't have to evolve the format here every time those wire types
+/// change. The cap on disk matches `MAX_RUNS_PER_TAB` in the UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedRun {
+    id: String,
+    started_at_ms: u64,
+    request: serde_json::Value,
+    response: serde_json::Value,
+}
+
+const RUNS_PER_REQUEST_CAP: usize = 100;
+
+/// Compute the on-disk JSON path for a request's run history.
+///
+/// `request_path` is the absolute path of the YAML file under the
+/// workspace root. We slugify it (replace `/` with `__`, strip the
+/// `.argos.yaml` suffix) so the runs dir stays flat and predictable.
+fn runs_file_for(workspace_root: &Path, request_path: &Path) -> Option<PathBuf> {
+    let rel = request_path.strip_prefix(workspace_root).ok()?;
+    let mut key = rel.to_string_lossy().replace(['/', '\\'], "__");
+    if let Some(stripped) = key.strip_suffix(".argos.yaml") {
+        key = stripped.to_string();
+    }
+    Some(workspace_root.join("runs").join(format!("{key}.json")))
+}
+
+/// Append a run to disk, keeping at most `RUNS_PER_REQUEST_CAP`.
+#[tauri::command]
+fn run_record(
+    workspace_root: String,
+    request_path: String,
+    run: serde_json::Value,
+) -> Result<(), String> {
+    let ws_root = Path::new(&workspace_root);
+    let req_path = Path::new(&request_path);
+    let Some(file) = runs_file_for(ws_root, req_path) else {
+        return Err(format!(
+            "request path is outside workspace: {}",
+            req_path.display()
+        ));
+    };
+
+    if let Some(parent) = file.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let mut runs: Vec<serde_json::Value> = if file.exists() {
+        let data = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
+        serde_json::from_str(&data).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    runs.insert(0, run);
+    if runs.len() > RUNS_PER_REQUEST_CAP {
+        runs.truncate(RUNS_PER_REQUEST_CAP);
+    }
+
+    let tmp = file.with_extension("json.tmp");
+    let body = serde_json::to_vec_pretty(&runs).map_err(|e| e.to_string())?;
+    std::fs::write(&tmp, body).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &file).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Load up to `RUNS_PER_REQUEST_CAP` persisted runs for a request, newest
+/// first. Missing file → empty array.
+#[tauri::command]
+fn run_load(
+    workspace_root: String,
+    request_path: String,
+) -> Result<Vec<PersistedRun>, String> {
+    let ws_root = Path::new(&workspace_root);
+    let req_path = Path::new(&request_path);
+    let Some(file) = runs_file_for(ws_root, req_path) else {
+        return Ok(Vec::new());
+    };
+    if !file.exists() {
+        return Ok(Vec::new());
+    }
+    let data = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
+    let runs: Vec<PersistedRun> = serde_json::from_str(&data).map_err(|e| e.to_string())?;
+    Ok(runs)
+}
+
+/// Drop all persisted runs for a request.
+#[tauri::command]
+fn run_clear(workspace_root: String, request_path: String) -> Result<(), String> {
+    let ws_root = Path::new(&workspace_root);
+    let req_path = Path::new(&request_path);
+    let Some(file) = runs_file_for(ws_root, req_path) else {
+        return Ok(());
+    };
+    if file.exists() {
+        std::fs::remove_file(&file).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Compute a filesystem-friendly slug from a human request name.
 #[tauri::command]
 fn slug(name: String) -> String {
@@ -443,6 +545,9 @@ fn main() {
             environment_save,
             environment_create,
             environment_delete,
+            run_record,
+            run_load,
+            run_clear,
             slug,
             tree_create_folder,
             tree_create_request,

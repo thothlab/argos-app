@@ -106,6 +106,37 @@ export async function treeMove(src: string, destDir: string): Promise<string> {
   return invokeCommand<string>('tree_move', { src, destDir });
 }
 
+// ---- run history --------------------------------------------------------
+
+export type PersistedRun = {
+  id: string;
+  started_at_ms: number;
+  request: HttpRequest;
+  response: HttpResponse;
+};
+
+export async function runRecord(
+  workspaceRoot: string,
+  requestPath: string,
+  run: PersistedRun,
+): Promise<void> {
+  return invokeCommand<void>('run_record', { workspaceRoot, requestPath, run });
+}
+
+export async function runLoad(
+  workspaceRoot: string,
+  requestPath: string,
+): Promise<PersistedRun[]> {
+  return invokeCommand<PersistedRun[]>('run_load', { workspaceRoot, requestPath });
+}
+
+export async function runClear(
+  workspaceRoot: string,
+  requestPath: string,
+): Promise<void> {
+  return invokeCommand<void>('run_clear', { workspaceRoot, requestPath });
+}
+
 // ---- environments -------------------------------------------------------
 
 export async function environmentSave(path: string, env: Environment): Promise<void> {
