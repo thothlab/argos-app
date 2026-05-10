@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use argos_core::codegen::curl;
-use argos_core::format::{slugify, RequestDraft};
-use argos_core::{HttpClient, HttpRequest, HttpResponse, Resolver, Workspace};
+use argos_core::format::{slugify, Folder, RequestDraft};
+use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::sync::OnceCell;
@@ -178,6 +178,133 @@ fn slug(name: String) -> String {
     slugify(&name)
 }
 
+// ---- tree CRUD -----------------------------------------------------------
+
+/// Create a sub-folder under `parent_dir` with display name `name`.
+/// Writes a `_folder.argos.yaml` so the loader picks up the human name.
+/// Returns the new folder's absolute path.
+#[tauri::command]
+fn tree_create_folder(parent_dir: String, name: String) -> Result<String, String> {
+    let parent = Path::new(&parent_dir);
+    if !parent.is_dir() {
+        return Err(format!("not a directory: {}", parent.display()));
+    }
+    let slug = slugify(&name);
+    let new_dir = parent.join(&slug);
+    if new_dir.exists() {
+        return Err(format!("already exists: {}", new_dir.display()));
+    }
+    std::fs::create_dir_all(&new_dir).map_err(|e| e.to_string())?;
+    let folder = Folder::new(&name);
+    folder.save(&new_dir).map_err(|e| e.to_string())?;
+    Ok(new_dir.to_string_lossy().into_owned())
+}
+
+/// Create a new request file under `parent_dir`. Returns the new file path.
+#[tauri::command]
+fn tree_create_request(
+    parent_dir: String,
+    name: String,
+    method: Option<HttpMethod>,
+) -> Result<String, String> {
+    let parent = Path::new(&parent_dir);
+    if !parent.is_dir() {
+        return Err(format!("not a directory: {}", parent.display()));
+    }
+    let slug = slugify(&name);
+    let mut file_path = parent.join(format!("{slug}.argos.yaml"));
+    let mut counter = 1;
+    while file_path.exists() {
+        counter += 1;
+        file_path = parent.join(format!("{slug}-{counter}.argos.yaml"));
+    }
+    let req = RequestDraft::new_rest(&name, method.unwrap_or(HttpMethod::Get), "");
+    req.save(&file_path).map_err(|e| e.to_string())?;
+    Ok(file_path.to_string_lossy().into_owned())
+}
+
+/// Rename the file or folder at `path` to `new_name`. Folders' display
+/// name in the YAML is updated separately by the editor; this command
+/// only handles the filesystem rename.
+#[tauri::command]
+fn tree_rename(path: String, new_name: String) -> Result<String, String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("not found: {}", p.display()));
+    }
+    let parent = p.parent().ok_or_else(|| "no parent dir".to_string())?;
+    let slug = slugify(&new_name);
+
+    let new_path = if p.is_dir() {
+        parent.join(slug)
+    } else {
+        // File rename — preserve `.argos.yaml` suffix.
+        parent.join(format!("{slug}.argos.yaml"))
+    };
+
+    if new_path.exists() {
+        return Err(format!("already exists: {}", new_path.display()));
+    }
+    std::fs::rename(p, &new_path).map_err(|e| e.to_string())?;
+
+    // For folders, also update the inner _folder.argos.yaml display name.
+    if new_path.is_dir() {
+        if let Ok(mut f) = Folder::load(&new_path) {
+            f.name = new_name;
+            f.save(&new_path).ok();
+        }
+    }
+
+    Ok(new_path.to_string_lossy().into_owned())
+}
+
+/// Delete the file or folder at `path`. Folders are removed recursively.
+#[tauri::command]
+fn tree_delete(path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Ok(());
+    }
+    if p.is_dir() {
+        std::fs::remove_dir_all(p).map_err(|e| e.to_string())
+    } else {
+        std::fs::remove_file(p).map_err(|e| e.to_string())
+    }
+}
+
+/// Move the file or folder at `src` into the folder `dest_dir`.
+/// Used by drag-n-drop reorder. Conflict on filename suffixes a counter.
+#[tauri::command]
+fn tree_move(src: String, dest_dir: String) -> Result<String, String> {
+    let s = Path::new(&src);
+    let d = Path::new(&dest_dir);
+    if !s.exists() {
+        return Err(format!("not found: {}", s.display()));
+    }
+    if !d.is_dir() {
+        return Err(format!("not a directory: {}", d.display()));
+    }
+    // No-op if already inside dest.
+    if let Some(parent) = s.parent() {
+        if parent == d {
+            return Ok(src);
+        }
+    }
+    let file_name = s
+        .file_name()
+        .ok_or_else(|| "missing file name".to_string())?;
+
+    let mut target = d.join(file_name);
+    let mut counter = 1;
+    while target.exists() {
+        counter += 1;
+        let stem = file_name.to_string_lossy();
+        target = d.join(format!("{stem}-{counter}"));
+    }
+    std::fs::rename(s, &target).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
 // ---- recents -------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,6 +407,11 @@ fn main() {
             workspace_clear_recent,
             request_save,
             slug,
+            tree_create_folder,
+            tree_create_request,
+            tree_rename,
+            tree_delete,
+            tree_move,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Argos desktop app");
