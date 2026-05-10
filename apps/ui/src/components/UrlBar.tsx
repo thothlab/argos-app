@@ -19,6 +19,7 @@ import {
   setUrl,
   toWireRequest,
 } from '../stores/request';
+import { recordRun } from '../stores/runs';
 import type { HttpMethod } from '../types/http';
 
 import MethodPicker from './MethodPicker';
@@ -33,9 +34,13 @@ export default function UrlBar() {
     const draft = getRequest(tabId);
     if (!draft || !draft.url.trim()) return;
 
+    const wire = toWireRequest(draft);
     setResponse(tabId, { status: 'loading', startedAt: Date.now() });
-    sendRequest(toWireRequest(draft))
-      .then((response) => setResponse(tabId, { status: 'ok', response }))
+    sendRequest(wire)
+      .then((response) => {
+        setResponse(tabId, { status: 'ok', response });
+        recordRun(tabId, wire, response);
+      })
       .catch((e: unknown) => setResponse(tabId, { status: 'error', message: String(e) }));
   }
 

@@ -16,6 +16,7 @@ import { createMemo, createSignal, For, Match, Show, Switch } from 'solid-js';
 
 import { CheckCircle2, Loader2, ShieldCheck, XCircle } from 'lucide-solid';
 
+import { bytesToDataUrl } from '../lib/bytes';
 import { getResponse } from '../stores/request';
 import { activeTabId } from '../stores/tabs';
 import {
@@ -24,6 +25,8 @@ import {
   isTextContentType,
   type HttpResponse,
 } from '../types/http';
+
+import HexViewer from './HexViewer';
 
 const LARGE_BODY_BYTES = 200_000;
 
@@ -193,9 +196,35 @@ function OkPane(props: { response: HttpResponse }) {
 // ---- body / headers / timing views ----------------------------------------
 
 function BodyView(props: { response: HttpResponse }) {
+  const ct = () => props.response.body.content_type;
+  const isImage = () => (ct() ?? '').startsWith('image/');
+  const isText = () => isTextContentType(ct());
+  const isLarge = () => props.response.body.size_bytes >= LARGE_BODY_BYTES;
+
+  return (
+    <Switch>
+      <Match when={isImage()}>
+        <ImageView response={props.response} />
+      </Match>
+      <Match when={isLarge() && isText()}>
+        <p class="p-4 font-mono text-[12px] text-fg-secondary">
+          Body is {formatBytes(props.response.body.size_bytes)} — text preview disabled until
+          streaming render lands. (Tracked under T1.4 follow-up.)
+        </p>
+      </Match>
+      <Match when={isText()}>
+        <TextView response={props.response} />
+      </Match>
+      <Match when={true}>
+        <HexViewer bytes={props.response.body.bytes} />
+      </Match>
+    </Switch>
+  );
+}
+
+function TextView(props: { response: HttpResponse }) {
   const text = createMemo(() => bytesToString(props.response.body.bytes));
   const ct = () => props.response.body.content_type;
-
   const pretty = createMemo(() => {
     if (!isJsonContentType(ct())) return null;
     try {
@@ -204,32 +233,27 @@ function BodyView(props: { response: HttpResponse }) {
       return null;
     }
   });
-
   return (
-    <Show
-      when={props.response.body.size_bytes < LARGE_BODY_BYTES}
-      fallback={
-        <p class="p-4 font-mono text-[12px] text-fg-secondary">
-          Body is {formatBytes(props.response.body.size_bytes)} — preview disabled until streaming
-          render lands. (Tracked under T1.4 follow-up.)
-        </p>
-      }
-    >
-      <Show
-        when={isTextContentType(ct())}
-        fallback={
-          <p class="p-4 font-mono text-[12px] text-fg-secondary">
-            Binary body of type{' '}
-            <span class="text-fg-primary">{ct()}</span>. Hex / preview viewer arrives in T1.4
-            follow-up.
-          </p>
-        }
-      >
-        <pre class="m-0 whitespace-pre-wrap break-all p-4 font-mono text-[12px] leading-relaxed text-fg-primary">
-          {pretty() ?? text()}
-        </pre>
-      </Show>
-    </Show>
+    <pre class="m-0 whitespace-pre-wrap break-all p-4 font-mono text-[12px] leading-relaxed text-fg-primary">
+      {pretty() ?? text()}
+    </pre>
+  );
+}
+
+function ImageView(props: { response: HttpResponse }) {
+  const ct = () => props.response.body.content_type ?? 'image/*';
+  const url = createMemo(() => bytesToDataUrl(props.response.body.bytes, ct()));
+  return (
+    <div class="flex flex-col items-start gap-2 p-4">
+      <img
+        src={url()}
+        alt={`response ${ct()}`}
+        class="max-w-full rounded border border-border bg-bg-secondary"
+      />
+      <p class="font-mono text-[11px] text-fg-secondary">
+        {ct()} · {formatBytes(props.response.body.size_bytes)}
+      </p>
+    </div>
   );
 }
 

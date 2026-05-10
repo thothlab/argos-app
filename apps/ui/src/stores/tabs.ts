@@ -14,6 +14,7 @@ import { createSignal } from 'solid-js';
 import { nanoid } from 'nanoid';
 
 import { dropTabState, initTabState } from './request';
+import { clearRuns } from './runs';
 import type { HttpMethod } from '../types/http';
 
 export type Tab = {
@@ -73,6 +74,7 @@ export function closeTab(id: string): void {
   const next = list.filter((t) => t.id !== id);
   setTabs(next);
   dropTabState(id);
+  clearRuns(id);
 
   if (activeTabId() === id) {
     const replacement = next[idx] ?? next[idx - 1] ?? null;
