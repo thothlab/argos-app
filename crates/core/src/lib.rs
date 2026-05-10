@@ -21,12 +21,14 @@
 pub mod codegen;
 pub mod format;
 pub mod http;
+pub mod vars;
 pub mod workspace;
 
 pub use http::{
     HttpBody, HttpClient, HttpError, HttpHeader, HttpMethod, HttpRequest, HttpResponse,
     ResponseBody, Timing,
 };
+pub use vars::Resolver;
 pub use workspace::{TreeNode, Workspace};
 
 /// Crate version (matches `Cargo.toml`).

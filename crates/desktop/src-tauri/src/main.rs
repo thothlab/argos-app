@@ -6,9 +6,11 @@ mod watcher;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use std::collections::HashMap;
+
 use argos_core::codegen::curl;
 use argos_core::format::{slugify, RequestDraft};
-use argos_core::{HttpClient, HttpRequest, HttpResponse, Workspace};
+use argos_core::{HttpClient, HttpRequest, HttpResponse, Resolver, Workspace};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::sync::OnceCell;
@@ -43,19 +45,82 @@ fn ping() -> &'static str {
 // ---- HTTP ----------------------------------------------------------------
 
 /// Execute one HTTP request via `argos-core` and return the buffered response.
+///
+/// `env` carries the active environment's variables (plus secrets) so the
+/// backend can resolve `{{name}}` placeholders before sending. Pass an empty
+/// map for a "no env active" send — placeholders will then be left verbatim.
 #[tauri::command]
 async fn send_request(
     state: State<'_, AppState>,
     req: HttpRequest,
+    env: Option<HashMap<String, String>>,
 ) -> Result<HttpResponse, String> {
+    let resolved = resolve_request(req, env.unwrap_or_default());
     let client = http_client(&state).await?;
-    client.execute(&req).await.map_err(|e| e.to_string())
+    client.execute(&resolved).await.map_err(|e| e.to_string())
 }
 
-/// Render the request as a `curl` invocation.
+/// Render the request as a `curl` invocation. Resolves `{{var}}` first using
+/// the supplied environment so the curl preview matches what would be sent.
 #[tauri::command]
-fn request_to_curl(req: HttpRequest) -> String {
-    curl::to_curl(&req)
+fn request_to_curl(req: HttpRequest, env: Option<HashMap<String, String>>) -> String {
+    let resolved = resolve_request(req, env.unwrap_or_default());
+    curl::to_curl(&resolved)
+}
+
+/// Apply variable substitution to a request's URL, headers, query and body.
+fn resolve_request(mut req: HttpRequest, env: HashMap<String, String>) -> HttpRequest {
+    let mut r = Resolver::new(env);
+    req.url = r.resolve(&req.url);
+    for h in &mut req.headers {
+        h.name = r.resolve(&h.name);
+        h.value = r.resolve(&h.value);
+    }
+    for (k, v) in &mut req.query {
+        *k = r.resolve(k);
+        *v = r.resolve(v);
+    }
+    if let Some(body) = req.body.as_mut() {
+        match body {
+            argos_core::HttpBody::Text {
+                content,
+                content_type,
+            } => {
+                *content = r.resolve(content);
+                *content_type = r.resolve(content_type);
+            }
+            argos_core::HttpBody::Json { value } => {
+                resolve_json(value, &mut r);
+            }
+            argos_core::HttpBody::FormUrlEncoded { fields } => {
+                for (k, v) in fields {
+                    *k = r.resolve(k);
+                    *v = r.resolve(v);
+                }
+            }
+            argos_core::HttpBody::Raw { content_type, .. } => {
+                *content_type = r.resolve(content_type);
+            }
+        }
+    }
+    req
+}
+
+fn resolve_json(value: &mut serde_json::Value, r: &mut Resolver) {
+    match value {
+        serde_json::Value::String(s) => *s = r.resolve(s),
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                resolve_json(v, r);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values_mut() {
+                resolve_json(v, r);
+            }
+        }
+        _ => {}
+    }
 }
 
 // ---- workspace -----------------------------------------------------------
@@ -104,9 +169,7 @@ fn workspace_reload(path: String) -> Result<Workspace, String> {
 /// implicitly by the atomic-write helper.
 #[tauri::command]
 fn request_save(path: String, draft: RequestDraft) -> Result<(), String> {
-    draft
-        .save(Path::new(&path))
-        .map_err(|e| e.to_string())
+    draft.save(Path::new(&path)).map_err(|e| e.to_string())
 }
 
 /// Compute a filesystem-friendly slug from a human request name.
@@ -132,10 +195,7 @@ struct Recents {
 const MAX_RECENTS: usize = 12;
 
 fn recents_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| e.to_string())?;
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir.join("recents.json"))
 }
@@ -157,7 +217,9 @@ fn write_recents(app: &tauri::AppHandle, r: &Recents) -> Result<(), String> {
 }
 
 fn recents_add(app: &tauri::AppHandle, ws_path: &Path) -> Result<(), String> {
-    let abs = ws_path.canonicalize().unwrap_or_else(|_| ws_path.to_path_buf());
+    let abs = ws_path
+        .canonicalize()
+        .unwrap_or_else(|_| ws_path.to_path_buf());
     let mut r = read_recents(app);
     r.entries.retain(|e| e.path != abs);
     r.entries.insert(
