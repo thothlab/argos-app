@@ -19,6 +19,7 @@
 #![allow(clippy::doc_markdown)]
 
 pub mod codegen;
+pub mod crash;
 pub mod exports;
 pub mod format;
 pub mod http;
