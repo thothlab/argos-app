@@ -13,6 +13,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import { installAutosave } from './lib/autosave';
 import { bind } from './lib/hotkeys';
 import { saveActiveTab } from './lib/save';
+import { checkForUpdatesOnStartup } from './lib/updater';
 import { activeTab, activeTabId } from './stores/tabs';
 import { workspace } from './stores/workspace';
 import { installWsEventListener } from './stores/ws';
@@ -20,6 +21,7 @@ import { installWsEventListener } from './stores/ws';
 export default function App() {
   installAutosave();
   void installWsEventListener();
+  void checkForUpdatesOnStartup();
 
   // ⌘S saves the active tab. Scratch tabs (no `path`) trigger a Save-As
   // dialog the first time, then save directly thereafter.

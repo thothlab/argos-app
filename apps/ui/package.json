@@ -22,6 +22,8 @@
     "@kobalte/core": "^0.13.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0",
     "codemirror": "^6.0.2",
     "lucide-solid": "^0.456.0",
     "nanoid": "^5.0.0",

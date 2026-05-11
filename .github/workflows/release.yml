@@ -1,0 +1,134 @@
+name: release
+
+# Cuts signed Tauri bundles on every `v*` tag.
+#
+# Outputs:
+#   - GitHub Release with the four platform installers attached
+#     (.dmg ×2, .AppImage, .msi/.exe).
+#   - A `.sig` minisign signature next to each installer, plus a
+#     `latest.json` manifest matching Tauri 2's updater shape.
+#
+# Required secrets:
+#   - TAURI_SIGNING_PRIVATE_KEY      — contents of ~/.argos/keys/argos-updater.key
+#   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty for the closed-alpha key
+#
+# After this workflow finishes, run on the Mac Mini:
+#   make -C apps/web push-manifest FILE=./latest.json
+#
+# … with `latest.json` downloaded from the release. The manifest is
+# what `https://argos.thothlab.tech/api/update/...` reads. We don't
+# auto-push it yet — that's a chunk for after the first manual
+# release proves the chain works end-to-end.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.platform.target }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { runner: macos-14,      target: darwin-aarch64,  rust: aarch64-apple-darwin     }
+          - { runner: macos-13,      target: darwin-x86_64,   rust: x86_64-apple-darwin      }
+          - { runner: ubuntu-22.04,  target: linux-x86_64,    rust: x86_64-unknown-linux-gnu }
+          - { runner: windows-2022,  target: windows-x86_64,  rust: x86_64-pc-windows-msvc   }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.rust }}
+
+      - name: Linux Tauri prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build UI
+        run: pnpm --filter @argos/ui build
+
+      - name: Build + sign Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: crates/desktop/src-tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: "Argos ${{ github.ref_name }}"
+          releaseBody: |
+            Closed-alpha build. See https://argos.thothlab.tech for the project.
+
+            ### Updater
+
+            The bundled updater pings
+            `https://argos.thothlab.tech/api/update/{target-arch}/{version}`
+            on launch. After this release publishes, run on the Mac Mini:
+
+            ```
+            cd apps/web
+            make push-manifest FILE=./latest.json
+            ```
+
+            … with `latest.json` from this release's assets.
+          releaseDraft: true
+          prerelease: true
+          args: --target ${{ matrix.platform.rust }}
+
+  # After every matrix job has uploaded its bundle + signature, this
+  # job downloads the release, builds a single `latest.json` (Tauri's
+  # combined manifest shape), and uploads it back as a release asset.
+  # The Mac Mini's `make push-manifest` reads this asset.
+  manifest:
+    name: assemble latest.json
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose latest.json from release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # tauri-action publishes per-platform `.json` files next to
+          # the bundles. We merge them into one Tauri-2-shaped manifest.
+          gh release download "$TAG" --pattern '*.json' --dir dist
+          python3 .github/scripts/merge-tauri-manifests.py dist > latest.json
+          gh release upload "$TAG" latest.json --clobber
+          echo
+          echo "Manifest assembled. To activate the updater endpoint, on the Mac Mini run:"
+          echo "  cd apps/web"
+          echo "  gh release download $TAG --pattern latest.json"
+          echo "  make push-manifest FILE=./latest.json"
