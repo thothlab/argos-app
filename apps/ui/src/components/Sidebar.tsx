@@ -217,12 +217,32 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
           <ContextMenu.Content class="z-50 min-w-48 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
             <MenuItem
               icon={<FilePlus size={13} />}
-              label="New request"
+              label="New REST request"
               onSelect={async () => {
                 const name = window.prompt('Request name:');
                 if (!name) return;
                 try {
                   const path = await treeCreateRequest(props.node.path, name);
+                  await reloadWorkspace();
+                  setOpen(true);
+                  const fresh = workspace();
+                  if (fresh) {
+                    const node = findRequest(fresh.tree, path);
+                    if (node) openOrFocusTabForRequest(node.path, node.draft);
+                  }
+                } catch (e) {
+                  alert(`Could not create request:\n\n${String(e)}`);
+                }
+              }}
+            />
+            <MenuItem
+              icon={<FilePlus size={13} />}
+              label="New GraphQL request"
+              onSelect={async () => {
+                const name = window.prompt('Request name:');
+                if (!name) return;
+                try {
+                  const path = await treeCreateRequest(props.node.path, name, null, 'graphql');
                   await reloadWorkspace();
                   setOpen(true);
                   const fresh = workspace();

@@ -230,6 +230,71 @@ fn run_with_iteration_data_csv_runs_each_row() {
 }
 
 #[test]
+fn run_executes_graphql_request_as_post() {
+    let server = MockServer::start();
+    let _m = server.mock(|when, then| {
+        when.method(POST)
+            .path("/graphql")
+            .header("content-type", "application/json")
+            .body_contains("ListUsers");
+        then.status(200)
+            .header("Content-Type", "application/json")
+            .body(r#"{"data":{"users":[]}}"#);
+    });
+
+    let dir = tempfile::tempdir().unwrap();
+    Workspace::create(dir.path(), "gql").unwrap();
+    let collections = dir.path().join("collections");
+    std::fs::create_dir_all(&collections).unwrap();
+    let mut req = argos_core::format::RequestDraft::new_graphql(
+        "List users",
+        format!("{}/graphql", server.base_url()),
+    );
+    if let argos_core::format::request::RequestVariant::Graphql(g) = &mut req.variant {
+        g.query = "query ListUsers { users { id } }".into();
+    } else {
+        panic!("expected graphql");
+    }
+    req.scripts.tests =
+        Some("bru.test('200', () => { bru.expect(bru.res.status).toBe(200); });".into());
+    req.save(&collections.join("list.argos.yaml")).unwrap();
+
+    let out = Command::new(cli_bin())
+        .arg("run")
+        .arg(&collections)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected exit 0 — stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("✓"), "missing ✓ in: {stdout}");
+}
+
+#[test]
+fn run_skips_websocket_request_with_notice() {
+    let dir = tempfile::tempdir().unwrap();
+    Workspace::create(dir.path(), "ws").unwrap();
+    let collections = dir.path().join("collections");
+    std::fs::create_dir_all(&collections).unwrap();
+    let req = argos_core::format::RequestDraft::new_websocket("Chat", "wss://x");
+    req.save(&collections.join("chat.argos.yaml")).unwrap();
+
+    let out = Command::new(cli_bin())
+        .arg("run")
+        .arg(&collections)
+        .output()
+        .unwrap();
+    // Skip is non-fatal — exit 0, but stderr explains.
+    assert!(out.status.success());
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("websocket") || stderr.contains("⤬"));
+}
+
+#[test]
 fn reporter_writes_json_and_junit_files() {
     let server = MockServer::start();
     let _m = server.mock(|when, then| {

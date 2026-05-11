@@ -222,8 +222,9 @@ export async function treeCreateRequest(
   parentDir: string,
   name: string,
   method: HttpMethod | null = 'GET',
+  protocol: 'rest' | 'graphql' | 'websocket' = 'rest',
 ): Promise<string> {
-  return invokeCommand<string>('tree_create_request', { parentDir, name, method });
+  return invokeCommand<string>('tree_create_request', { parentDir, name, method, protocol });
 }
 
 export async function treeRename(path: string, newName: string): Promise<string> {

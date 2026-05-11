@@ -2,6 +2,7 @@ import { Show } from 'solid-js';
 
 import AppShell from './components/AppShell';
 import DropImportOverlay from './components/DropImportOverlay';
+import GraphqlEditor from './components/GraphqlEditor';
 import ProtocolPlaceholder from './components/ProtocolPlaceholder';
 import RequestEditor from './components/RequestEditor';
 import ResponsePane from './components/ResponsePane';
@@ -45,12 +46,16 @@ export default function App() {
         </div>
       }
     >
-      <Show
-        when={(activeTab()?.protocol ?? 'rest') === 'rest'}
-        fallback={<ProtocolPlaceholder protocol={activeTab()?.protocol ?? 'rest'} />}
-      >
-        <Splitter left={() => <RequestEditor />} right={() => <ResponsePane />} />
-      </Show>
+      {(() => {
+        const protocol = activeTab()?.protocol ?? 'rest';
+        if (protocol === 'rest') {
+          return <Splitter left={() => <RequestEditor />} right={() => <ResponsePane />} />;
+        }
+        if (protocol === 'graphql') {
+          return <Splitter left={() => <GraphqlEditor />} right={() => <ResponsePane />} />;
+        }
+        return <ProtocolPlaceholder protocol={protocol} />;
+      })()}
     </Show>
   );
 
