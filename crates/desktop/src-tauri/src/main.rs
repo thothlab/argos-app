@@ -1304,6 +1304,14 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        // Tauri updater — checks the endpoint in tauri.conf.json
+        // (`plugins.updater.endpoints`) for a manifest signed with
+        // the matching pubkey. The UI triggers the actual check via
+        // the @tauri-apps/plugin-updater JS API.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Process plugin — needed for `relaunch()` after applying an
+        // update bundle.
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             core_version,
             ping,

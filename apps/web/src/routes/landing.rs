@@ -53,7 +53,10 @@ mod tests {
             .unwrap();
         let body = std::str::from_utf8(&body).unwrap();
         assert!(body.contains("Argos"));
-        assert!(body.contains("/download/"));
+        // Download buttons are placeholders until the first signed
+        // release lands (see docs/12_releasing.md, "Re-enable…").
+        assert!(body.contains("btn disabled"));
+        assert!(body.contains("Apple Silicon"));
     }
 
     #[tokio::test]
