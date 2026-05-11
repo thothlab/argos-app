@@ -100,8 +100,13 @@ push-caddy: deploy/Caddyfile.snippet
 	@echo "Appending Caddyfile snippet to $(VPS_HOST):/etc/caddy/Caddyfile"
 	scp deploy/Caddyfile.snippet $(VPS_HOST):/tmp/argos-caddy.snippet
 	ssh $(VPS_HOST) "sudo tee -a /etc/caddy/Caddyfile < /tmp/argos-caddy.snippet > /dev/null"
-	ssh $(VPS_HOST) "sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy"
-	@echo "✓ Caddy reloaded"
+	ssh $(VPS_HOST) "sudo caddy validate --config /etc/caddy/Caddyfile"
+	# Use `restart`, not `reload`. reload waits for active connections
+	# to drain — and HTTP/3 video streams on neighbouring vhosts
+	# (jellyfin / immich) drag this out to a systemd timeout. restart
+	# is ~5s of downtime for ALL vhosts but actually completes.
+	ssh $(VPS_HOST) "sudo systemctl restart caddy && systemctl is-active caddy"
+	@echo "✓ Caddy restarted (vhosts back online)"
 
 # Copy a new manifest.json (typically produced by `cargo tauri build` or
 # `tauri-action` in CI) into the data volume. Usage:
