@@ -66,11 +66,15 @@ pub struct RequestOutcome {
 }
 
 impl RequestOutcome {
-    fn is_ok(&self) -> bool {
+    /// `true` when the transport succeeded *and* every test passed.
+    /// Public so reporters can apply the same rule the console prints.
+    #[must_use]
+    pub fn is_ok(&self) -> bool {
         self.error.is_none() && self.tests.iter().all(|t| t.passed)
     }
 
-    fn failing_tests(&self) -> usize {
+    #[must_use]
+    pub fn failing_tests(&self) -> usize {
         self.tests.iter().filter(|t| !t.passed).count()
     }
 }

@@ -194,7 +194,8 @@ fn run_with_iteration_data_csv_runs_each_row() {
         HttpMethod::Get,
         format!("{}/search", server.base_url()),
     );
-    if let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant {
+    {
+        let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant;
         rest.query.push(KeyValue {
             name: "q".into(),
             value: "{{q}}".into(),
@@ -229,6 +230,98 @@ fn run_with_iteration_data_csv_runs_each_row() {
 }
 
 #[test]
+fn reporter_writes_json_and_junit_files() {
+    let server = MockServer::start();
+    let _m = server.mock(|when, then| {
+        when.method(GET).path("/users");
+        then.status(200).body("[]");
+    });
+
+    let dir = tempfile::tempdir().unwrap();
+    write_workspace(
+        dir.path(),
+        &format!("{}/users", server.base_url()),
+        Some("bru.test('status 200', () => { bru.expect(bru.res.status).toBe(200); });"),
+    );
+
+    let json_out = dir.path().join("report.json");
+    let junit_out = dir.path().join("report.xml");
+    let html_out = dir.path().join("report.html");
+
+    let out = Command::new(cli_bin())
+        .arg("run")
+        .arg(dir.path().join("collections"))
+        .arg("--reporter")
+        .arg(format!("json={}", json_out.display()))
+        .arg("--reporter")
+        .arg(format!("junit={}", junit_out.display()))
+        .arg("--reporter")
+        .arg(format!("html={}", html_out.display()))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected exit 0 — stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let j = std::fs::read_to_string(&json_out).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&j).unwrap();
+    assert_eq!(v["schema"], "argos.run.v1");
+    assert_eq!(v["summary"]["requests_total"], 1);
+    assert_eq!(v["iterations"][0]["requests"][0]["ok"], true);
+
+    let xml = std::fs::read_to_string(&junit_out).unwrap();
+    assert!(xml.starts_with("<?xml"));
+    assert!(xml.contains("<testsuites"));
+    assert!(xml.contains("<testcase"));
+
+    let html = std::fs::read_to_string(&html_out).unwrap();
+    assert!(html.starts_with("<!DOCTYPE html>"));
+    assert!(html.contains("/users"));
+}
+
+#[test]
+fn reporter_to_stdout_emits_payload() {
+    let server = MockServer::start();
+    let _m = server.mock(|when, then| {
+        when.method(GET).path("/u");
+        then.status(200);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    write_workspace(dir.path(), &format!("{}/u", server.base_url()), None);
+    let out = Command::new(cli_bin())
+        .arg("run")
+        .arg(dir.path().join("collections"))
+        .arg("--reporter")
+        .arg("json")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    // Console summary still printed; JSON appended.
+    assert!(stdout.contains("requests passed"));
+    let json_start = stdout.find("{\n").expect("json appended");
+    let json_body = &stdout[json_start..];
+    let v: serde_json::Value = serde_json::from_str(json_body).unwrap();
+    assert_eq!(v["schema"], "argos.run.v1");
+}
+
+#[test]
+fn reporter_unknown_format_errors_out() {
+    let dir = tempfile::tempdir().unwrap();
+    write_workspace(dir.path(), "https://127.0.0.1:1", None);
+    let out = Command::new(cli_bin())
+        .arg("run")
+        .arg(dir.path().join("collections"))
+        .arg("--reporter")
+        .arg("yaml")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(stderr.contains("yaml") || stderr.contains("unknown reporter"));
+}
+
+#[test]
 fn run_with_iteration_data_json_is_supported() {
     let server = MockServer::start();
     let _ok = server.mock(|when, then| {
@@ -249,7 +342,8 @@ fn run_with_iteration_data_json_is_supported() {
         HttpMethod::Get,
         format!("{}/x", server.base_url()),
     );
-    if let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant {
+    {
+        let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant;
         rest.query.push(KeyValue {
             name: "k".into(),
             value: "{{k}}".into(),
