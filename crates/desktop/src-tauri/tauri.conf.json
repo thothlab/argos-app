@@ -47,7 +47,7 @@
       "endpoints": [
         "https://argos.thothlab.tech/api/update/{{target}}-{{arch}}/{{current_version}}"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwMUEwRkU0RjJDOTYwNDIKUldSQ1lNbnk1QThhRUxlSWxvVlg5d0hWTjlXaktZR3RCQStGMlJNZHdqOVFxZDBZNEZFbTAwZHoK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5RjEwMUYwNUMxREIzQUQKUldTdHN4MWM4QUh4dVEyTDhkUWYrbWN6UUNGaG5OM3lzejBrcEt0R0MxMk1LRThGR0xJVWJCZGIK"
     }
   }
 }
