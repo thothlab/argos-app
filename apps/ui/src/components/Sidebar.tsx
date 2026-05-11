@@ -301,6 +301,10 @@ const METHOD_VAR: Record<string, string> = {
   DELETE: 'var(--method-delete)',
   HEAD: 'var(--fg-secondary)',
   OPTIONS: 'var(--fg-secondary)',
+  // Protocol pills: distinct colour to set non-REST rows apart at a
+  // glance. Reused from existing palette tokens so theming covers them.
+  GQL: 'var(--method-patch)',
+  WS: 'var(--method-put)',
 };
 
 function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth: number }) {
@@ -308,7 +312,10 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
   const isOpen = () => activeTab()?.path === props.node.path;
   const method = (): string => {
     const d = props.node.draft;
-    return d.type === 'rest' ? d.method : 'GET';
+    if (d.type === 'rest') return d.method;
+    if (d.type === 'graphql') return 'GQL';
+    if (d.type === 'websocket') return 'WS';
+    return '';
   };
 
   function onDragStart(e: DragEvent) {

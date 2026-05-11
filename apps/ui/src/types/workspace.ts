@@ -67,6 +67,42 @@ export type RestRequest = {
   body: BodyDraft | null;
 };
 
+/**
+ * GraphQL request — POSTed as `{ query, variables, operationName }`.
+ * Execution lands in E5 chunk 2; the chunk-1 editor shows a placeholder.
+ */
+export type GraphqlRequest = {
+  type: 'graphql';
+  url: string;
+  query: string;
+  variables: unknown | null;
+  operation_name: string | null;
+  headers: KeyValue[];
+  auth: AuthConfig | null;
+};
+
+export type WsMessageTemplate = {
+  name: string;
+  body: string;
+};
+
+/**
+ * WebSocket request — connection params + outgoing message templates.
+ * Execution lands in E5 chunk 3.
+ */
+export type WebsocketRequest = {
+  type: 'websocket';
+  url: string;
+  subprotocols: string[];
+  headers: KeyValue[];
+  auth: AuthConfig | null;
+  messages: WsMessageTemplate[];
+};
+
+export type RequestVariant = RestRequest | GraphqlRequest | WebsocketRequest;
+
+export type ProtocolTag = RequestVariant['type'];
+
 export type ScriptHooks = {
   pre_request: string | null;
   tests: string | null;
@@ -75,9 +111,10 @@ export type ScriptHooks = {
 /**
  * Wire shape of `argos_core::format::RequestDraft`.
  *
- * Note the flattened `RequestVariant` — the YAML uses a single `type:` tag
- * at the top level (e.g. `type: rest`). Future GraphQL / gRPC / WS variants
- * widen this union.
+ * The YAML uses a single `type:` tag at the top level (e.g. `type: rest`,
+ * `type: graphql`, `type: websocket`) — `RequestVariant` is flattened
+ * into the draft, so a GraphQL request gets `query:` / `variables:`
+ * keys directly, not nested under an opaque blob.
  */
 export type RequestDraft = {
   kind: 'request';
@@ -85,7 +122,7 @@ export type RequestDraft = {
   description: string | null;
   scripts: ScriptHooks;
   schema_ref: string | null;
-} & RestRequest;
+} & RequestVariant;
 
 // ---- folder --------------------------------------------------------------
 

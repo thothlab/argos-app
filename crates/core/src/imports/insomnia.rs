@@ -533,7 +533,7 @@ mod tests {
         match &c.items[0] {
             ImportItem::Request { draft } => {
                 assert_eq!(draft.name, "Ping");
-                let RequestVariant::Rest(rest) = &draft.variant;
+                let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
                 assert_eq!(rest.method, HttpMethod::Get);
             }
             _ => panic!("expected request"),
@@ -607,7 +607,7 @@ mod tests {
         let ImportItem::Request { draft } = &c.items[0] else {
             panic!()
         };
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         assert_eq!(rest.url, "{{baseUrl}}/me");
         assert_eq!(rest.headers[0].value, "Bearer {{token}}");
     }
@@ -630,7 +630,7 @@ mod tests {
         let ImportItem::Request { draft } = &c.items[0] else {
             panic!()
         };
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         match &rest.body {
             Some(BodyDraft::FormUrlEncoded { fields }) => {
                 assert_eq!(fields.len(), 2);
@@ -656,7 +656,7 @@ mod tests {
         let ImportItem::Request { draft } = &c.items[0] else {
             panic!()
         };
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         match &rest.body {
             Some(BodyDraft::Json { value }) => assert_eq!(value, &json!({"name":"Alice","n":3})),
             other => panic!("expected json body, got {other:?}"),
@@ -685,13 +685,13 @@ mod tests {
         let ImportItem::Request { draft: a } = &c.items[0] else {
             panic!()
         };
-        let RequestVariant::Rest(ra) = &a.variant;
+        let RequestVariant::Rest(ra) = &a.variant else { panic!("expected REST variant"); };
         assert!(matches!(ra.auth, Some(AuthConfig::Bearer { ref token }) if token == "{{tok}}"));
 
         let ImportItem::Request { draft: b } = &c.items[1] else {
             panic!()
         };
-        let RequestVariant::Rest(rb) = &b.variant;
+        let RequestVariant::Rest(rb) = &b.variant else { panic!("expected REST variant"); };
         assert!(matches!(
             rb.auth,
             Some(AuthConfig::Basic { ref username, ref password }) if username == "u" && password == "p"
@@ -700,7 +700,7 @@ mod tests {
         let ImportItem::Request { draft: c2 } = &c.items[2] else {
             panic!()
         };
-        let RequestVariant::Rest(rc) = &c2.variant;
+        let RequestVariant::Rest(rc) = &c2.variant else { panic!("expected REST variant"); };
         assert!(matches!(
             rc.auth,
             Some(AuthConfig::ApiKey { location: ApiKeyLocation::Query, ref name, ref value })
@@ -720,7 +720,7 @@ mod tests {
         let ImportItem::Request { draft } = &c.items[0] else {
             panic!()
         };
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         assert!(rest.auth.is_none());
     }
 
@@ -770,7 +770,7 @@ mod tests {
         let ImportItem::Request { draft } = &c.items[0] else {
             panic!()
         };
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         assert_eq!(rest.query.len(), 2);
         assert!(rest.query.iter().any(|q| q.name == "q" && q.enabled));
         assert!(rest.query.iter().any(|q| q.name == "expired" && !q.enabled));

@@ -300,15 +300,30 @@ fn print_tree(node: &TreeNode, indent: &str) {
                 print_tree(child, &next_indent);
             }
         }
-        TreeNode::Request { draft, .. } => {
-            let RequestVariant::Rest(rest) = &draft.variant;
-            println!(
-                "{indent}- {method:<6} {url}  [{name}]",
-                method = rest.method.as_str(),
-                url = rest.url,
-                name = draft.name,
-            );
-        }
+        TreeNode::Request { draft, .. } => match &draft.variant {
+            RequestVariant::Rest(rest) => {
+                println!(
+                    "{indent}- {method:<6} {url}  [{name}]",
+                    method = rest.method.as_str(),
+                    url = rest.url,
+                    name = draft.name,
+                );
+            }
+            RequestVariant::Graphql(g) => {
+                println!(
+                    "{indent}- GQL    {url}  [{name}]",
+                    url = g.url,
+                    name = draft.name,
+                );
+            }
+            RequestVariant::Websocket(w) => {
+                println!(
+                    "{indent}- WS     {url}  [{name}]",
+                    url = w.url,
+                    name = draft.name,
+                );
+            }
+        },
     }
 }
 

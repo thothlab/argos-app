@@ -18,7 +18,7 @@ import { dropTabState, getRequest, initTabState, patchRequest, type DraftRequest
 import { clearRuns, hydrateRuns } from './runs';
 import { workspace } from './workspace';
 import type { HttpMethod, HttpRequest } from '../types/http';
-import type { RequestDraft } from '../types/workspace';
+import type { BodyDraft, ProtocolTag, RequestDraft, RestRequest } from '../types/workspace';
 
 export type Tab = {
   /** Stable identifier, persisted across reorders. */
@@ -31,15 +31,24 @@ export type Tab = {
   pinned: boolean;
   /** True if the tab has unsaved local edits. */
   dirty: boolean;
+  /** Protocol of the underlying request. New `+` tabs start as REST;
+   *  GraphQL / WebSocket land in chunks 2 and 3. */
+  protocol: ProtocolTag;
 };
 
-function makeTab(partial: { title: string; path?: string | null; pinned?: boolean }): Tab {
+function makeTab(partial: {
+  title: string;
+  path?: string | null;
+  pinned?: boolean;
+  protocol?: ProtocolTag;
+}): Tab {
   return {
     id: nanoid(8),
     title: partial.title,
     path: partial.path ?? null,
     pinned: partial.pinned ?? false,
     dirty: false,
+    protocol: partial.protocol ?? 'rest',
   };
 }
 
@@ -164,7 +173,7 @@ export function openOrFocusTabForRequest(path: string, draft: RequestDraft): voi
     setActiveTabId(existing.id);
     return;
   }
-  const tab = makeTab({ title: draft.name, path });
+  const tab = makeTab({ title: draft.name, path, protocol: draft.type });
 
   // Initial draft → store. We map the on-disk draft to our editor draft.
   initTabState(tab.id);
@@ -277,7 +286,7 @@ export function tabAsDraft(tabId: string): RequestDraft | null {
   };
 }
 
-function buildAuth(r: DraftRequest): RequestDraft['auth'] {
+function buildAuth(r: DraftRequest): RestRequest['auth'] {
   switch (r.auth.kind) {
     case 'none':
       return null;
@@ -297,7 +306,7 @@ function buildAuth(r: DraftRequest): RequestDraft['auth'] {
   }
 }
 
-function buildBody(r: DraftRequest | null): RequestDraft['body'] {
+function buildBody(r: DraftRequest | null): BodyDraft | null {
   if (!r) return null;
   if (r.bodyKind === 'none' || !r.bodyText) return null;
   if (r.bodyKind === 'json') {

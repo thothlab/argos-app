@@ -686,7 +686,7 @@ get {
 ";
         let draft = from_str(src, "fallback").unwrap();
         assert_eq!(draft.name, "List users");
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         assert_eq!(rest.method, HttpMethod::Get);
         assert_eq!(rest.url, "https://api.example.com/users");
     }
@@ -718,7 +718,7 @@ headers {
 }
 ";
         let draft = from_str(src, "x").unwrap();
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         assert_eq!(rest.method, HttpMethod::Post);
         assert_eq!(rest.query.len(), 2);
         assert!(rest.query.iter().any(|q| q.name == "q" && q.enabled));
@@ -742,7 +742,7 @@ body:json {
 }
 "#;
         let draft = from_str(src, "x").unwrap();
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         match &rest.body {
             Some(BodyDraft::Json { value }) => {
                 assert_eq!(value, &serde_json::json!({"name":"Alice","n":3}));
@@ -761,7 +761,7 @@ body:form-urlencoded {
 }
 ";
         let draft = from_str(src, "x").unwrap();
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         match &rest.body {
             Some(BodyDraft::FormUrlEncoded { fields }) => {
                 assert_eq!(fields.len(), 2);
@@ -806,7 +806,7 @@ auth:apikey {
         ];
         for (src, label) in cases {
             let draft = from_str(src, "x").unwrap();
-            let RequestVariant::Rest(rest) = &draft.variant;
+            let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
             match (label, &rest.auth) {
                 ("bearer", Some(AuthConfig::Bearer { token })) => {
                     assert_eq!(token, "{{token}}");
@@ -862,7 +862,7 @@ tests {
 headers { Accept: application/json }
 ";
         let draft = from_str(src, "x").unwrap();
-        let RequestVariant::Rest(rest) = &draft.variant;
+        let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
         // The headers block must still be picked up after the
         // script block with nested braces.
         assert!(rest.headers.iter().any(|h| h.name == "Accept"));
