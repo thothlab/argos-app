@@ -29,6 +29,8 @@ url = { workspace = true }
 bytes = { workspace = true }
 mime = { workspace = true }
 shlex = { workspace = true }
+sha2 = "0.10"
+hex = "0.4"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros", "rt"] }

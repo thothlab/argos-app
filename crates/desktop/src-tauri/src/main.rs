@@ -1288,10 +1288,87 @@ fn workspace_clear_recent(app: tauri::AppHandle) -> Result<(), String> {
     write_recents(&app, &Recents::default())
 }
 
+// ---- panic hook ----------------------------------------------------------
+
+/// Where pending / submitted crash reports live. Falls back to a
+/// tempdir if the OS data dir can't be resolved — that path is
+/// best-effort; if the hook can't write, it does nothing rather
+/// than crash the panic handler itself.
+fn crash_data_dir() -> std::path::PathBuf {
+    // We don't have the Tauri AppHandle here (the panic hook is
+    // installed before `Builder::default().setup()` would give us
+    // one). Use the same identifier the Tauri config carries
+    // (`dev.argos.app`) so the directory stays predictable across
+    // launches.
+    let bundle = "dev.argos.app";
+    if let Some(base) = dirs_data_dir() {
+        return base.join(bundle);
+    }
+    std::env::temp_dir().join(bundle)
+}
+
+/// Cross-platform user data dir resolver. We bring in just enough
+/// logic to mirror what Tauri's `app_data_dir()` would return,
+/// without pulling the whole `dirs` crate.
+fn dirs_data_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        return std::env::var_os("HOME").map(|h| {
+            std::path::PathBuf::from(h).join("Library").join("Application Support")
+        });
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(xdg) = std::env::var_os("XDG_DATA_HOME") {
+            return Some(std::path::PathBuf::from(xdg));
+        }
+        return std::env::var_os("HOME").map(|h| {
+            std::path::PathBuf::from(h).join(".local").join("share")
+        });
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::var_os("APPDATA").map(std::path::PathBuf::from);
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+/// Install a `std::panic::set_hook` that captures the panic, writes
+/// a `CrashReport` to `<app_data>/crashes/pending/<hash>.json`, then
+/// runs the default hook (so the panic still surfaces in stderr /
+/// the system log).
+fn install_panic_hook() {
+    let app_version = env!("CARGO_PKG_VERSION").to_string();
+    // Capture the previously-installed hook (tracing-subscriber may
+    // have set one) so panic logs still flow to its sink.
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "<unknown>".to_string());
+        let message = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+
+        let report =
+            argos_core::crash::CrashReport::new(app_version.clone(), message, location);
+        // Best-effort: never panic inside the panic handler.
+        let _ = argos_core::crash::write_pending(&crash_data_dir(), &report);
+
+        previous(info);
+    }));
+}
+
 // ---- entry point ---------------------------------------------------------
 
 fn main() {
     argos_core::init_tracing();
+    install_panic_hook();
 
     let state: AppState = Arc::new(OnceCell::new());
     let active_watcher = ActiveWatcher::default();
