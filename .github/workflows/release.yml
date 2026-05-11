@@ -61,9 +61,10 @@ jobs:
             libssl-dev \
             patchelf
 
+      # Version comes from the root package.json `packageManager`
+      # field — don't specify it here or pnpm refuses with
+      # ERR_PNPM_BAD_PM_VERSION ("multiple versions specified").
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
