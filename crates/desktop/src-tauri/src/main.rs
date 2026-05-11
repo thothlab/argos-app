@@ -328,6 +328,149 @@ fn openapi_import(
     materialise_import(&workspace_root, collection)
 }
 
+/// Sniff `path` and decide which importer to use. Drives the drag-drop
+/// wizard: the UI calls this once per dropped path, then dispatches to
+/// the matching `*_import` command.
+///
+/// Detection is intentionally conservative — we only return a concrete
+/// format when the structural fingerprint is unambiguous, so the user
+/// doesn't get silently funneled into the wrong importer.
+#[tauri::command]
+fn import_detect(path: String) -> Result<ImportDetectResult, String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("not found: {path}"));
+    }
+    if p.is_dir() {
+        if p.join("bruno.json").is_file() {
+            return Ok(ImportDetectResult {
+                format: "bruno".into(),
+                name: dir_name(p),
+            });
+        }
+        return Ok(ImportDetectResult {
+            format: "unknown".into(),
+            name: dir_name(p),
+        });
+    }
+
+    // Read up to ~64KB — enough for the headers of any reasonable spec
+    // without slurping huge OpenAPI files that ship inline examples.
+    use std::io::Read;
+    let mut head = String::new();
+    std::fs::File::open(p)
+        .and_then(|mut f| {
+            let mut buf = vec![0_u8; 64 * 1024];
+            let n = f.read(&mut buf)?;
+            head = String::from_utf8_lossy(&buf[..n]).into_owned();
+            Ok(())
+        })
+        .map_err(|e| format!("read {path}: {e}"))?;
+
+    let format = sniff_format(&head, p);
+    Ok(ImportDetectResult {
+        format: format.into(),
+        name: p
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    })
+}
+
+/// Result of [`import_detect`]. `format` is one of:
+/// `"postman" | "insomnia" | "openapi" | "bruno" | "unknown"`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImportDetectResult {
+    pub format: String,
+    pub name: String,
+}
+
+fn dir_name(p: &Path) -> String {
+    p.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// Inspect the first few KB of a file plus its extension to classify
+/// the importer. The fingerprint set:
+///   - Postman: `info.schema` contains `"v2.1"`.
+///   - Insomnia: top-level `"_type":"export"` OR `"__export_format"`.
+///   - OpenAPI: `"openapi":"3.x"` (JSON) or `openapi: 3.x` (YAML).
+fn sniff_format(head: &str, path: &Path) -> &'static str {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(str::to_ascii_lowercase);
+
+    let trimmed = head.trim_start();
+    let looks_json = trimmed.starts_with('{') || trimmed.starts_with('[');
+
+    if looks_json || matches!(ext.as_deref(), Some("json")) {
+        // Cheap structural matches first — avoid parsing the full JSON
+        // when a substring search is unambiguous.
+        if head.contains("schema.getpostman.com") && head.contains("v2.1") {
+            return "postman";
+        }
+        if head.contains("\"_type\"") && head.contains("\"export\"") {
+            return "insomnia";
+        }
+        if head.contains("\"__export_format\"") {
+            return "insomnia";
+        }
+        if head.contains("\"openapi\"") && head.contains("\"3.") {
+            return "openapi";
+        }
+        // Last-ditch: a full parse if the prefix landed; tolerate
+        // partial reads by parsing the head into Value::Null on
+        // failure.
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(head) {
+            if v.get("info")
+                .and_then(|i| i.get("schema"))
+                .and_then(|s| s.as_str())
+                .is_some_and(|s| s.contains("v2.1"))
+            {
+                return "postman";
+            }
+            if v.get("_type").and_then(|t| t.as_str()) == Some("export") {
+                return "insomnia";
+            }
+            if v.get("openapi")
+                .and_then(|o| o.as_str())
+                .is_some_and(|s| s.starts_with("3."))
+            {
+                return "openapi";
+            }
+        }
+    }
+
+    if matches!(ext.as_deref(), Some("yaml") | Some("yml")) {
+        // Trivial YAML sniff — first non-blank, non-comment line that
+        // starts with `openapi:` followed by `3.`.
+        for line in head.lines() {
+            let l = line.trim();
+            if l.is_empty() || l.starts_with('#') {
+                continue;
+            }
+            if let Some(rest) = l.strip_prefix("openapi:") {
+                let v = rest.trim().trim_matches(|c: char| c == '"' || c == '\'');
+                if v.starts_with("3.") {
+                    return "openapi";
+                }
+            }
+            // Don't keep scanning the whole head — OpenAPI puts the
+            // version at the top.
+            break;
+        }
+        // Some specs lead with `info:` or comments before `openapi:`;
+        // fall back to a substring sniff before giving up.
+        if head.contains("openapi: 3.") || head.contains("openapi: \"3.") {
+            return "openapi";
+        }
+    }
+
+    "unknown"
+}
+
 fn read_inline_or_path(source: &str, inline: bool) -> Result<String, String> {
     if inline {
         Ok(source.to_string())
@@ -998,6 +1141,7 @@ fn main() {
             insomnia_import,
             bruno_import,
             openapi_import,
+            import_detect,
             run_export_har,
             workspace_open,
             workspace_create,
@@ -1021,4 +1165,46 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Argos desktop app");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sniff_format;
+    use std::path::Path;
+
+    #[test]
+    fn sniffs_postman_v21() {
+        let head = r#"{ "info": { "name": "x", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" }, "item": [] }"#;
+        assert_eq!(sniff_format(head, Path::new("x.json")), "postman");
+    }
+
+    #[test]
+    fn sniffs_insomnia_v4() {
+        let head = r#"{ "_type": "export", "__export_format": 4, "resources": [] }"#;
+        assert_eq!(sniff_format(head, Path::new("x.json")), "insomnia");
+    }
+
+    #[test]
+    fn sniffs_openapi_json() {
+        let head = r#"{ "openapi": "3.0.3", "info": {} }"#;
+        assert_eq!(sniff_format(head, Path::new("x.json")), "openapi");
+    }
+
+    #[test]
+    fn sniffs_openapi_yaml() {
+        let head = "openapi: 3.0.3\ninfo:\n  title: x\n";
+        assert_eq!(sniff_format(head, Path::new("x.yaml")), "openapi");
+    }
+
+    #[test]
+    fn sniffs_openapi_yaml_quoted_version() {
+        let head = "openapi: \"3.1.0\"\n";
+        assert_eq!(sniff_format(head, Path::new("x.yml")), "openapi");
+    }
+
+    #[test]
+    fn unknown_when_not_recognised() {
+        assert_eq!(sniff_format("hello world", Path::new("x.txt")), "unknown");
+        assert_eq!(sniff_format("{}", Path::new("x.json")), "unknown");
+    }
 }

@@ -1,6 +1,7 @@
 import { Show } from 'solid-js';
 
 import AppShell from './components/AppShell';
+import DropImportOverlay from './components/DropImportOverlay';
 import RequestEditor from './components/RequestEditor';
 import ResponsePane from './components/ResponsePane';
 import Splitter from './components/Splitter';
@@ -48,8 +49,11 @@ export default function App() {
   );
 
   return (
-    <Show when={workspace()} fallback={<WelcomeScreen />}>
-      <AppShell tabContent={tabContent} />
-    </Show>
+    <>
+      <DropImportOverlay />
+      <Show when={workspace()} fallback={<WelcomeScreen />}>
+        <AppShell tabContent={tabContent} />
+      </Show>
+    </>
   );
 }
