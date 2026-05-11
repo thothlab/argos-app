@@ -29,13 +29,23 @@ pub async fn redirect(
 }
 
 /// Map a target to the canonical filename in the releases bucket.
-/// Centralised so the landing HTML and Tauri updater agree on naming.
+///
+/// **Version is baked in** — Tauri's default bundle naming includes
+/// the version (`Argos_<v>_<arch>.dmg`), and GitHub's
+/// `/releases/latest/download/<name>` only accepts the exact filename.
+/// When the next release lands, bump these strings (or, follow-up,
+/// read the latest manifest.json and use its `url` field — same
+/// source of truth as the updater).
 pub fn asset_for_target(target: &str) -> Option<&'static str> {
     match target {
-        "macos-aarch64" | "darwin-aarch64" => Some("argos-macos-aarch64.dmg"),
-        "macos-x64" | "darwin-x86_64" => Some("argos-macos-x64.dmg"),
-        "linux-x64" | "linux-x86_64" => Some("argos-linux-x64.AppImage"),
-        "windows-x64" | "windows-x86_64" => Some("argos-windows-x64-setup.exe"),
+        "macos-aarch64" | "darwin-aarch64" => Some("Argos_0.1.0_aarch64.dmg"),
+        "linux-x64" | "linux-x86_64" => Some("Argos_0.1.0_amd64.AppImage"),
+        "windows-x64" | "windows-x86_64" => Some("Argos_0.1.0_x64-setup.exe"),
+        // Intel macOS bundle was skipped in v0.1.0 (macos-13 runner
+        // starved). Until the matrix is fixed to cross-compile from
+        // macos-latest, send Intel users to the Apple Silicon dmg
+        // (runs under Rosetta).
+        "macos-x64" | "darwin-x86_64" => Some("Argos_0.1.0_aarch64.dmg"),
         _ => None,
     }
 }
@@ -64,7 +74,7 @@ mod tests {
         let loc = res.headers().get("location").unwrap().to_str().unwrap();
         assert_eq!(
             loc,
-            "https://example.test/releases/latest/download/argos-macos-aarch64.dmg"
+            "https://example.test/releases/latest/download/Argos_0.1.0_aarch64.dmg"
         );
     }
 

@@ -1,0 +1,43 @@
+{
+  "version": "0.1.0",
+  "notes": "Closed-alpha build. See https://argos.thothlab.tech for the project.\n\n### Updater\n\nThe bundled updater pings\n`https://argos.thothlab.tech/api/update/{target-arch}/{version}`\non launch. After this release publishes, run on the Mac Mini:\n\n```\ncd apps/web\nmake push-manifest FILE=./latest.json\n```\n\n… with `latest.json` from this release's assets.",
+  "pub_date": "2026-05-11T20:22:20.326Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dVgwcE5nVDZIclpmNWZoQ1ZFU05TdFU3UTlLOENrTlFGYTNBYWV5UHptUExFWmlhc0VnaEwrZUN1Zkc5ekQ0Uktibm5HUmwzOGJjZC96cTRyQ29LdGdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwNzI5CWZpbGU6QXJnb3MuYXBwLnRhci5negppMjhqSitpR0hSaE51S2l4UWdhczV2cExROGQvMTUxaVFXUEdZMzFkNUdqRUFTUkY4L05BaExIbndiLzdkaW5RQUtwYWw3cVNTa0dwdmxCMExnZzRCUT09Cg==",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_aarch64.app.tar.gz"
+    },
+    "darwin-aarch64-app": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dVgwcE5nVDZIclpmNWZoQ1ZFU05TdFU3UTlLOENrTlFGYTNBYWV5UHptUExFWmlhc0VnaEwrZUN1Zkc5ekQ0Uktibm5HUmwzOGJjZC96cTRyQ29LdGdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwNzI5CWZpbGU6QXJnb3MuYXBwLnRhci5negppMjhqSitpR0hSaE51S2l4UWdhczV2cExROGQvMTUxaVFXUEdZMzFkNUdqRUFTUkY4L05BaExIbndiLzdkaW5RQUtwYWw3cVNTa0dwdmxCMExnZzRCUT09Cg==",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_aarch64.app.tar.gz"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dVJOcE1HUm5Tb09EL0ZFbWZPM1M4N3AvTXRIUGpTRS8zUFZyOHFhUDc0MXBhaGt5WG1nYTVmaWZYdnpTU3pPamRiMzEwanRvNWxZZk55UnU5VHpxQVFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwNzk5CWZpbGU6QXJnb3NfMC4xLjBfYW1kNjQuQXBwSW1hZ2UKdy9Za2F6dWk2VHcreFYvZWpSRmUza0RmWUh5elBDai9JUEZEc21mSzNkRExNOC9TcTI5VHJYU2ZSMlRFaXJxZ3VyZEtjWWV1YURDclJhTWU0ZjN6QXc9PQo=",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_0.1.0_amd64.AppImage"
+    },
+    "linux-x86_64-appimage": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dVJOcE1HUm5Tb09EL0ZFbWZPM1M4N3AvTXRIUGpTRS8zUFZyOHFhUDc0MXBhaGt5WG1nYTVmaWZYdnpTU3pPamRiMzEwanRvNWxZZk55UnU5VHpxQVFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwNzk5CWZpbGU6QXJnb3NfMC4xLjBfYW1kNjQuQXBwSW1hZ2UKdy9Za2F6dWk2VHcreFYvZWpSRmUza0RmWUh5elBDai9JUEZEc21mSzNkRExNOC9TcTI5VHJYU2ZSMlRFaXJxZ3VyZEtjWWV1YURDclJhTWU0ZjN6QXc9PQo=",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_0.1.0_amd64.AppImage"
+    },
+    "linux-x86_64-deb": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dVI0ZzVDUHl0Uk9BeE5JTDVYL3E1dWZCQVNieFN3eTE4ZEhGWVRZdXJqV1VWdnZPN2hTd2VZL3BJOVU4V0Y4MVdwVkJJU0lxWmRQa0ppWiswcSs5S0FBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwNzk5CWZpbGU6QXJnb3NfMC4xLjBfYW1kNjQuZGViCmF6VklxN1hoUnkxdlAvS3BvZjZsQWhKSldPMTNETytFaEIxWnZCTDdHN0JneTlCU3VFRHJ3b3o5SDlVQkF4bWV2VmJQTnZZTUVwVVpWcG56M0pPdkJBPT0K",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_0.1.0_amd64.deb"
+    },
+    "linux-x86_64-rpm": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dWRCQ0NLMklNSnQ0bzh2RmdBRGtEZkNrZHdIQ1J1RDRWUGN2UGl5cW8rTGJxSUN2VWpJSUY2MjEvZ1ovKzArWnlwc0lJVU00ZFh2T0ZuNjFialphSGdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwNzk5CWZpbGU6QXJnb3MtMC4xLjAtMS54ODZfNjQucnBtCmRQSTlkRmEwSU5NSFIxU2JVcjBKZm9UelVnNHhrSk52T2pNcVBIRC9lNVVzU25QU3ZvUkdFZHZRbmN3ZC9JQ3NHcnhnd1BXRFdYL1NWVmdPUGFmTERnPT0K",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos-0.1.0-1.x86_64.rpm"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dWIvK1Y3ZjBiSGU4cWVCWkphRmNEM1pOVU9GOEtibGsxU3pvS01ScmxiUDQ3SmJjZU5iY2NxRzBIeXNSMlZHazd0UEltazFsWEZOVkV0bTY3a1ovaVE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwOTM2CWZpbGU6QXJnb3NfMC4xLjBfeDY0X2VuLVVTLm1zaQpCd0l0VjlnNmFyQnR0akFCdDFjSUpnL216YVF2b2pmdWZEbFFRdVBoQThBQ1pUMVBDRHBqd0NTaGlWbm11TTJoUzBFbzdwNUFFdTJ4ZWRDTVZMQnpEZz09Cg==",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_0.1.0_x64_en-US.msi"
+    },
+    "windows-x86_64-msi": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dWIvK1Y3ZjBiSGU4cWVCWkphRmNEM1pOVU9GOEtibGsxU3pvS01ScmxiUDQ3SmJjZU5iY2NxRzBIeXNSMlZHazd0UEltazFsWEZOVkV0bTY3a1ovaVE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwOTM2CWZpbGU6QXJnb3NfMC4xLjBfeDY0X2VuLVVTLm1zaQpCd0l0VjlnNmFyQnR0akFCdDFjSUpnL216YVF2b2pmdWZEbFFRdVBoQThBQ1pUMVBDRHBqd0NTaGlWbm11TTJoUzBFbzdwNUFFdTJ4ZWRDTVZMQnpEZz09Cg==",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_0.1.0_x64_en-US.msi"
+    },
+    "windows-x86_64-nsis": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTdHN4MWM4QUh4dVpQMnBrcnhsaHFDV04vOUE3b0NqM3d1dlFWS0plOURLMG5hVC9HWDdZU3JpeHQwRExDcVRjcmliQjQwZ0I0VHBuU3h4c0owUk04cEZFZVRaQ1doZEFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc4NTMwOTM2CWZpbGU6QXJnb3NfMC4xLjBfeDY0LXNldHVwLmV4ZQppbWFYSEhqR1hGSGxNMzVuQXQvSWdDMVExSlRyZi9rcjkvc3M4N1VwUmViMWNUcUJTQndVOVZsaVZUOEYwQUltOEc4OFczTHZKYkpLcm9JYWg2L0dBZz09Cg==",
+      "url": "https://github.com/thothlab/argos-app/releases/download/v0.1.0/Argos_0.1.0_x64-setup.exe"
+    }
+  }
+}

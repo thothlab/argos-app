@@ -103,7 +103,10 @@ jobs:
 
             … with `latest.json` from this release's assets.
           releaseDraft: true
-          prerelease: true
+          # Not a prerelease — GitHub's `/releases/latest/download/`
+          # only resolves to non-prerelease entries, and the
+          # /download/{target} route on argos-web relies on that.
+          prerelease: false
           args: --target ${{ matrix.platform.rust }}
 
   # After every matrix job has uploaded its bundle + signature, this
