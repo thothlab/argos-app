@@ -10,6 +10,7 @@ use std::collections::HashMap;
 
 use argos_core::codegen::curl;
 use argos_core::codegen::curl::from_curl;
+use argos_core::codegen::{fetch_js, go, python, rust as rust_codegen};
 use argos_core::exports::{har, postman as postman_export};
 use argos_core::format::{slugify, EnvVar, Environment, Folder, RequestDraft};
 use argos_core::imports::bruno;
@@ -336,6 +337,30 @@ fn _ws_direction_typecheck() -> WsDirection {
 fn request_to_curl(req: HttpRequest, env: Option<HashMap<String, String>>) -> String {
     let resolved = resolve_request(req, env.unwrap_or_default());
     curl::to_curl(&resolved)
+}
+
+/// Render the request as a code snippet in the named target language.
+/// Accepted targets (case-insensitive): `curl`, `fetch-browser`,
+/// `fetch-node`, `python`, `go`, `rust`. Unknown targets return an
+/// error so the UI surfaces a clear "unsupported" message instead of
+/// silently falling back.
+#[tauri::command]
+fn request_to_code(
+    req: HttpRequest,
+    target: String,
+    env: Option<HashMap<String, String>>,
+) -> Result<String, String> {
+    let resolved = resolve_request(req, env.unwrap_or_default());
+    let snippet = match target.to_ascii_lowercase().as_str() {
+        "curl" => curl::to_curl(&resolved),
+        "fetch-browser" => fetch_js::to_fetch(&resolved, fetch_js::Runtime::Browser),
+        "fetch-node" => fetch_js::to_fetch(&resolved, fetch_js::Runtime::Node),
+        "python" => python::to_python(&resolved),
+        "go" => go::to_go(&resolved),
+        "rust" => rust_codegen::to_rust(&resolved),
+        other => return Err(format!("unsupported codegen target: {other}")),
+    };
+    Ok(snippet)
 }
 
 /// Parse a pasted `curl` command into a wire request. Multi-line
@@ -1287,6 +1312,7 @@ fn main() {
             ws_send,
             ws_close,
             request_to_curl,
+            request_to_code,
             curl_to_request,
             postman_import,
             postman_export,
