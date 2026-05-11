@@ -143,6 +143,15 @@ export async function openapiImport(
   });
 }
 
+/** Importer format identifiers used by the drag-drop wizard. */
+export type ImportFormat = 'postman' | 'insomnia' | 'openapi' | 'bruno' | 'unknown';
+
+/** Sniff a dropped file / folder path and return the matching importer.
+ *  `unknown` means the wizard should show an error toast and bail. */
+export async function importDetect(path: string): Promise<{ format: ImportFormat; name: string }> {
+  return invokeCommand<{ format: ImportFormat; name: string }>('import_detect', { path });
+}
+
 /** Export the active workspace as a Postman v2.1 collection JSON.
  *  Returns the absolute path of the written file. */
 export async function postmanExport(

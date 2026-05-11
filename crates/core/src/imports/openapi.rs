@@ -229,9 +229,8 @@ fn build_operation(
     // joining with the base URL, so we don't accidentally rewrite the
     // `{{baseUrl}}` prefix into `{{{baseUrl}}}`.
     let templated_path = rewrite_path_params(path);
-    let url = if path.starts_with("http://") || path.starts_with("https://") {
-        templated_path
-    } else if base_url.is_empty() {
+    let is_absolute = path.starts_with("http://") || path.starts_with("https://");
+    let url = if is_absolute || base_url.is_empty() {
         templated_path
     } else {
         format!("{{{{baseUrl}}}}{templated_path}")
@@ -415,17 +414,17 @@ fn build_body(spec: &Value, request_body: &Value) -> Option<BodyDraft> {
     // application/json (or any other media type that wants JSON shape).
     if media_type.contains("json") {
         let example = extract_example(spec, &media_obj);
-        let value = example.unwrap_or(Value::Object(Default::default()));
+        let value = example.unwrap_or(Value::Object(serde_json::Map::default()));
         return Some(BodyDraft::Json { value });
     }
 
     // Generic text body — try example first, otherwise empty.
     let content_str = extract_example(spec, &media_obj)
-        .and_then(|v| {
+        .map(|v| {
             if let Value::String(s) = &v {
-                Some(s.clone())
+                s.clone()
             } else {
-                Some(v.to_string())
+                v.to_string()
             }
         })
         .unwrap_or_default();
@@ -511,11 +510,10 @@ fn stub_from_schema(spec: &Value, schema: &Value, depth: usize) -> Value {
         Some("array") => {
             let item = schema
                 .get("items")
-                .map(|i| stub_from_schema(spec, i, depth + 1))
-                .unwrap_or(Value::Null);
+                .map_or(Value::Null, |i| stub_from_schema(spec, i, depth + 1));
             Value::Array(vec![item])
         }
-        Some("integer") | Some("number") => Value::Number(0.into()),
+        Some("integer" | "number") => Value::Number(0.into()),
         Some("boolean") => Value::Bool(false),
         Some("string") => Value::String(String::new()),
         _ => {
@@ -558,7 +556,7 @@ fn resolve_security(spec: &Value, security: Option<&Value>) -> Option<AuthConfig
             // promise lowercase.
             match raw_scheme.to_ascii_lowercase().as_str() {
                 "bearer" => Some(AuthConfig::Bearer {
-                    token: format!("{{{{{}}}}}", scheme_name),
+                    token: format!("{{{{{scheme_name}}}}}"),
                 }),
                 "basic" => Some(AuthConfig::Basic {
                     username: String::new(),
@@ -580,7 +578,7 @@ fn resolve_security(spec: &Value, security: Option<&Value>) -> Option<AuthConfig
             };
             Some(AuthConfig::ApiKey {
                 name,
-                value: format!("{{{{{}}}}}", scheme_name),
+                value: format!("{{{{{scheme_name}}}}}"),
                 location,
             })
         }

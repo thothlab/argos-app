@@ -124,6 +124,13 @@ export default function WelcomeScreen() {
         </section>
       </Show>
 
+      <Show when={isTauri()}>
+        <p class="max-w-md text-[12px] text-fg-secondary">
+          Tip: drag a Postman, Insomnia, OpenAPI, or Bruno collection anywhere
+          in the window to import it.
+        </p>
+      </Show>
+
       <Show when={!isTauri()}>
         <p class="max-w-md text-[12px] text-fg-secondary">
           Running in the browser without the Tauri shell — workspace
