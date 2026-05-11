@@ -58,3 +58,6 @@ coverage/
 
 # Pencil temp exports (keep design.pen and design-exports/)
 # (nothing to ignore for now)
+
+# Claude Code runtime files
+.claude/
