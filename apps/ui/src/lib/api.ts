@@ -330,3 +330,35 @@ export async function environmentCreate(envDir: string, name: string): Promise<s
 export async function environmentDelete(path: string): Promise<void> {
   return invokeCommand<void>('environment_delete', { path });
 }
+
+// ---- crash reporter ------------------------------------------------------
+
+export type CrashSubmitResult = { sent: number; failed: number };
+
+/** Count of pending crash reports waiting in the local queue. */
+export async function crashPendingCount(): Promise<number> {
+  return invokeCommand<number>('crash_pending_count');
+}
+
+/** POST every pending report to the server, archive successes locally.
+ *  `sessionId` is the anonymous identifier the user opted into; pass
+ *  `null` for a one-shot submission without it. */
+export async function crashSubmitAll(sessionId: string | null): Promise<CrashSubmitResult> {
+  return invokeCommand<CrashSubmitResult>('crash_submit_all', { sessionId });
+}
+
+/** Discard pending reports without sending. */
+export async function crashDismissAll(): Promise<number> {
+  return invokeCommand<number>('crash_dismiss_all');
+}
+
+/** Write a renderer-side error as a pending crash report. */
+export async function crashRecord(message: string, location: string): Promise<void> {
+  return invokeCommand<void>('crash_record', { message, location });
+}
+
+/** Dev-only: simulate a crash by writing a fake report. Only available
+ *  in debug builds; production calls will fail with "unknown command". */
+export async function crashSimulate(): Promise<string> {
+  return invokeCommand<string>('crash_simulate');
+}

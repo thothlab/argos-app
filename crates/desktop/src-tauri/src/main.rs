@@ -1288,6 +1288,136 @@ fn workspace_clear_recent(app: tauri::AppHandle) -> Result<(), String> {
     write_recents(&app, &Recents::default())
 }
 
+// ---- crash reporter commands --------------------------------------------
+
+/// Count of pending crash reports waiting to be sent.
+#[tauri::command]
+fn crash_pending_count() -> Result<usize, String> {
+    argos_core::crash::list_pending(&crash_data_dir())
+        .map(|v| v.len())
+        .map_err(|e| e.to_string())
+}
+
+/// Outcome of `crash_submit_all` — counts and the destination
+/// directory for archived reports (UI shows it in the toast).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CrashSubmitResult {
+    pub sent: usize,
+    pub failed: usize,
+}
+
+/// Submit every pending report to the configured endpoint, then
+/// move successful ones into `submitted/<date>/`. Failures stay
+/// in `pending/` to retry next launch.
+///
+/// `session_id` is the anonymous identifier the user accepted into
+/// (or `None` for "just this once" — server tolerates missing id).
+#[tauri::command]
+async fn crash_submit_all(
+    state: State<'_, AppState>,
+    session_id: Option<String>,
+) -> Result<CrashSubmitResult, String> {
+    let dir = crash_data_dir();
+    let pending = argos_core::crash::list_pending(&dir).map_err(|e| e.to_string())?;
+    if pending.is_empty() {
+        return Ok(CrashSubmitResult { sent: 0, failed: 0 });
+    }
+
+    let endpoint = std::env::var("ARGOS_CRASH_ENDPOINT")
+        .unwrap_or_else(|_| "https://argos.thothlab.tech/api/crash".to_string());
+    let http = http_client(&state).await?;
+    let mut sent = 0;
+    let mut failed = 0;
+    for path in pending {
+        let mut report = match argos_core::crash::read(&path) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!(error = %e, path = %path.display(), "skip unreadable crash file");
+                failed += 1;
+                continue;
+            }
+        };
+        if let Some(id) = &session_id {
+            report.session_id = Some(id.clone());
+        }
+        let body = serde_json::to_vec(&report).map_err(|e| e.to_string())?;
+        let req = argos_core::HttpRequest {
+            method: argos_core::HttpMethod::Post,
+            url: endpoint.clone(),
+            query: vec![],
+            headers: vec![argos_core::HttpHeader::new(
+                "Content-Type",
+                "application/json",
+            )],
+            body: Some(argos_core::HttpBody::Raw {
+                bytes: body,
+                content_type: "application/json".into(),
+            }),
+            timeout: Some(std::time::Duration::from_secs(15)),
+        };
+        match http.execute(&req).await {
+            Ok(resp) if (200..300).contains(&resp.status) => {
+                let _ = argos_core::crash::move_to_submitted(&dir, &path);
+                sent += 1;
+            }
+            Ok(resp) => {
+                tracing::warn!(status = resp.status, "crash POST returned non-2xx");
+                failed += 1;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "crash POST failed");
+                failed += 1;
+            }
+        }
+    }
+    // Best-effort retention sweep — silently drop archives older than 14 days.
+    let _ = argos_core::crash::prune_submitted(&dir, 14);
+    Ok(CrashSubmitResult { sent, failed })
+}
+
+/// User picked "no thanks" — delete every pending file. The archive
+/// (already-submitted) is left alone.
+#[tauri::command]
+fn crash_dismiss_all() -> Result<usize, String> {
+    argos_core::crash::dismiss_pending(&crash_data_dir()).map_err(|e| e.to_string())
+}
+
+/// Record a JS-side error / unhandled rejection as a pending crash
+/// report. Called by the renderer's global error handler.
+#[tauri::command]
+fn crash_record(message: String, location: String) -> Result<(), String> {
+    let report = argos_core::crash::CrashReport::new(
+        env!("CARGO_PKG_VERSION").to_string(),
+        message,
+        location,
+    );
+    argos_core::crash::write_pending(&crash_data_dir(), &report)
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Dev-only: write a fake pending crash so the UI flow can be
+/// exercised without an actual panic. Behind `cfg(debug_assertions)`
+/// so production builds can't surface it.
+#[cfg(debug_assertions)]
+#[tauri::command]
+fn crash_simulate() -> Result<String, String> {
+    let report = argos_core::crash::CrashReport::new(
+        env!("CARGO_PKG_VERSION").to_string(),
+        format!(
+            "Simulated crash @ {}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        ),
+        "crates/desktop/src-tauri/src/main.rs:crash_simulate".to_string(),
+    );
+    argos_core::crash::write_pending(&crash_data_dir(), &report)
+        .map(|p| p.display().to_string())
+        .map_err(|e| e.to_string())
+}
+
 // ---- panic hook ----------------------------------------------------------
 
 /// Where pending / submitted crash reports live. Falls back to a
@@ -1425,6 +1555,12 @@ fn main() {
             tree_rename,
             tree_delete,
             tree_move,
+            crash_pending_count,
+            crash_submit_all,
+            crash_dismiss_all,
+            crash_record,
+            #[cfg(debug_assertions)]
+            crash_simulate,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Argos desktop app");

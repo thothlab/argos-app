@@ -1,6 +1,7 @@
 import { Show } from 'solid-js';
 
 import AppShell from './components/AppShell';
+import CrashReportConsentModal from './components/CrashReportConsentModal';
 import DropImportOverlay from './components/DropImportOverlay';
 import GraphqlEditor from './components/GraphqlEditor';
 import ProtocolPlaceholder from './components/ProtocolPlaceholder';
@@ -11,6 +12,7 @@ import Toaster from './components/Toaster';
 import WebsocketEditor from './components/WebsocketEditor';
 import WelcomeScreen from './components/WelcomeScreen';
 import { installAutosave } from './lib/autosave';
+import { installCrashCapture, startupCrashFlow } from './lib/crashes';
 import { bind } from './lib/hotkeys';
 import { saveActiveTab } from './lib/save';
 import { checkForUpdatesOnStartup } from './lib/updater';
@@ -20,8 +22,10 @@ import { installWsEventListener } from './stores/ws';
 
 export default function App() {
   installAutosave();
+  installCrashCapture();
   void installWsEventListener();
   void checkForUpdatesOnStartup();
+  void startupCrashFlow();
 
   // ⌘S saves the active tab. Scratch tabs (no `path`) trigger a Save-As
   // dialog the first time, then save directly thereafter.
@@ -71,6 +75,7 @@ export default function App() {
   return (
     <>
       <Toaster />
+      <CrashReportConsentModal />
       <DropImportOverlay />
       <Show when={workspace()} fallback={<WelcomeScreen />}>
         <AppShell tabContent={tabContent} />
