@@ -86,7 +86,23 @@ fn node_to_item(node: &TreeNode) -> Value {
 }
 
 fn request_to_value(variant: &RequestVariant) -> Value {
-    let RequestVariant::Rest(rest) = variant;
+    // Postman v2.1 is REST-only. Non-REST drafts surface as a minimal
+    // placeholder request so the export round-trips through the tree
+    // without losing the entry; lossy-protocol round-trip is for E5
+    // chunk 4.
+    let Some(rest) = variant.as_rest() else {
+        let mut req = Map::new();
+        req.insert("method".into(), Value::String("GET".into()));
+        req.insert("url".into(), Value::String(String::new()));
+        req.insert(
+            "description".into(),
+            Value::String(format!(
+                "[argos] {} request — not representable in Postman v2.1",
+                variant.protocol_tag(),
+            )),
+        );
+        return Value::Object(req);
+    };
     let mut req = Map::new();
     req.insert(
         "method".into(),
@@ -344,7 +360,7 @@ mod tests {
             HttpMethod::Post,
             "https://api.example.com/users",
         );
-        let RequestVariant::Rest(rest) = &mut draft.variant;
+        let RequestVariant::Rest(rest) = &mut draft.variant else { panic!("expected REST variant"); };
         rest.headers.push(KeyValue {
             name: "Accept".into(),
             value: "application/json".into(),
@@ -372,7 +388,7 @@ mod tests {
         match &reimported.items[0] {
             ImportItem::Request { draft: round } => {
                 assert_eq!(round.name, "Create user");
-                let RequestVariant::Rest(rr) = &round.variant;
+                let RequestVariant::Rest(rr) = &round.variant else { panic!("expected REST variant"); };
                 assert_eq!(rr.method, HttpMethod::Post);
                 assert_eq!(rr.url, "https://api.example.com/users");
                 assert!(rr.headers.iter().any(|h| h.name == "Accept"));
@@ -400,7 +416,7 @@ mod tests {
     #[test]
     fn query_params_round_trip_via_url_object() {
         let mut draft = RequestDraft::new_rest("Search", HttpMethod::Get, "https://x/search");
-        let RequestVariant::Rest(rest) = &mut draft.variant;
+        let RequestVariant::Rest(rest) = &mut draft.variant else { panic!("expected REST variant"); };
         rest.query.push(KeyValue {
             name: "q".into(),
             value: "widgets".into(),
@@ -423,7 +439,7 @@ mod tests {
         let ImportItem::Request { draft: r } = &reimported.items[0] else {
             panic!();
         };
-        let RequestVariant::Rest(rr) = &r.variant;
+        let RequestVariant::Rest(rr) = &r.variant else { panic!("expected REST variant"); };
         assert_eq!(rr.query.len(), 2);
         assert!(rr.query.iter().any(|q| q.name == "q" && q.enabled));
         assert!(rr.query.iter().any(|q| q.name == "expired" && !q.enabled));

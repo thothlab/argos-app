@@ -195,7 +195,7 @@ fn run_with_iteration_data_csv_runs_each_row() {
         format!("{}/search", server.base_url()),
     );
     {
-        let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant;
+        let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant else { panic!("expected REST"); };
         rest.query.push(KeyValue {
             name: "q".into(),
             value: "{{q}}".into(),
@@ -343,7 +343,7 @@ fn run_with_iteration_data_json_is_supported() {
         format!("{}/x", server.base_url()),
     );
     {
-        let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant;
+        let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant else { panic!("expected REST"); };
         rest.query.push(KeyValue {
             name: "k".into(),
             value: "{{k}}".into(),

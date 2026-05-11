@@ -2,6 +2,7 @@ import { Show } from 'solid-js';
 
 import AppShell from './components/AppShell';
 import DropImportOverlay from './components/DropImportOverlay';
+import ProtocolPlaceholder from './components/ProtocolPlaceholder';
 import RequestEditor from './components/RequestEditor';
 import ResponsePane from './components/ResponsePane';
 import Splitter from './components/Splitter';
@@ -9,7 +10,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import { installAutosave } from './lib/autosave';
 import { bind } from './lib/hotkeys';
 import { saveActiveTab } from './lib/save';
-import { activeTabId } from './stores/tabs';
+import { activeTab, activeTabId } from './stores/tabs';
 import { workspace } from './stores/workspace';
 
 export default function App() {
@@ -44,7 +45,12 @@ export default function App() {
         </div>
       }
     >
-      <Splitter left={() => <RequestEditor />} right={() => <ResponsePane />} />
+      <Show
+        when={(activeTab()?.protocol ?? 'rest') === 'rest'}
+        fallback={<ProtocolPlaceholder protocol={activeTab()?.protocol ?? 'rest'} />}
+      >
+        <Splitter left={() => <RequestEditor />} right={() => <ResponsePane />} />
+      </Show>
     </Show>
   );
 

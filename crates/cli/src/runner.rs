@@ -220,7 +220,21 @@ async fn run_node(
     let TreeNode::Request { draft, .. } = node else {
         return Ok(());
     };
-    let RequestVariant::Rest(rest) = &draft.variant;
+    let rest = match &draft.variant {
+        RequestVariant::Rest(r) => r,
+        // GraphQL execution lands in E5 chunk 2; WebSocket in chunk
+        // 3. Skip non-REST entries silently so mixed-protocol
+        // collections don't fail an `argos run`; the user-facing
+        // notice goes to stderr.
+        other => {
+            eprintln!(
+                "  ⤬ skipping {} ({} not executable yet)",
+                draft.name,
+                other.protocol_tag(),
+            );
+            return Ok(());
+        }
+    };
 
     // Merge ancestors → request. Ancestors are top→down already.
     let merged = apply_inheritance(rest, ancestors);

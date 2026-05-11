@@ -661,13 +661,13 @@ mod tests {
         for it in &c.items {
             match it {
                 ImportItem::Request { draft } => {
-                    let RequestVariant::Rest(rest) = &draft.variant;
+                    let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
                     return rest.clone();
                 }
                 ImportItem::Folder { items, .. } => {
                     for it in items {
                         if let ImportItem::Request { draft } = it {
-                            let RequestVariant::Rest(rest) = &draft.variant;
+                            let RequestVariant::Rest(rest) = &draft.variant else { panic!("expected REST variant"); };
                             return rest.clone();
                         }
                     }
