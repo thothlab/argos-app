@@ -942,6 +942,7 @@ fn tree_create_request(
     parent_dir: String,
     name: String,
     method: Option<HttpMethod>,
+    protocol: Option<String>,
 ) -> Result<String, String> {
     let parent = Path::new(&parent_dir);
     if !parent.is_dir() {
@@ -954,7 +955,11 @@ fn tree_create_request(
         counter += 1;
         file_path = parent.join(format!("{slug}-{counter}.argos.yaml"));
     }
-    let req = RequestDraft::new_rest(&name, method.unwrap_or(HttpMethod::Get), "");
+    let req = match protocol.as_deref().unwrap_or("rest") {
+        "graphql" => RequestDraft::new_graphql(&name, ""),
+        "websocket" => RequestDraft::new_websocket(&name, ""),
+        _ => RequestDraft::new_rest(&name, method.unwrap_or(HttpMethod::Get), ""),
+    };
     req.save(&file_path).map_err(|e| e.to_string())?;
     Ok(file_path.to_string_lossy().into_owned())
 }

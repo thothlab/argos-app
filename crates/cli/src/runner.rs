@@ -9,7 +9,9 @@ use std::path::Path;
 use std::time::Instant;
 
 use argos_core::format::folder::Folder;
-use argos_core::format::request::{AuthConfig, BodyDraft, KeyValue, RequestVariant, RestRequest};
+use argos_core::format::request::{
+    AuthConfig, BodyDraft, GraphqlRequest, KeyValue, RequestVariant, RestRequest,
+};
 use argos_core::{
     HttpBody, HttpClient, HttpHeader, HttpMethod, HttpRequest, Resolver, TreeNode, Workspace,
 };
@@ -220,17 +222,20 @@ async fn run_node(
     let TreeNode::Request { draft, .. } = node else {
         return Ok(());
     };
+    // GraphQL piggy-backs on the REST engine: same envelope, same
+    // env resolver, same scripts. WebSocket is its own story (chunk
+    // 3) and we skip it with a stderr notice.
+    let rest_owned: RestRequest;
     let rest = match &draft.variant {
         RequestVariant::Rest(r) => r,
-        // GraphQL execution lands in E5 chunk 2; WebSocket in chunk
-        // 3. Skip non-REST entries silently so mixed-protocol
-        // collections don't fail an `argos run`; the user-facing
-        // notice goes to stderr.
-        other => {
+        RequestVariant::Graphql(g) => {
+            rest_owned = graphql_to_rest(g);
+            &rest_owned
+        }
+        RequestVariant::Websocket(_) => {
             eprintln!(
-                "  ⤬ skipping {} ({} not executable yet)",
+                "  ⤬ skipping {} (websocket not executable yet)",
                 draft.name,
-                other.protocol_tag(),
             );
             return Ok(());
         }
@@ -341,6 +346,43 @@ async fn execute_one(
         tests = outcome.tests;
     }
     Ok((response.status, tests))
+}
+
+/// Translate a [`GraphqlRequest`] into a REST `POST` of the GraphQL
+/// JSON envelope so the existing engine + scripting can run it
+/// unchanged. The wrapper is intentionally permissive: invalid
+/// variables JSON falls through to the request as a string, matching
+/// the editor's "save what you typed" behaviour.
+fn graphql_to_rest(g: &GraphqlRequest) -> RestRequest {
+    let mut body = serde_json::Map::new();
+    body.insert("query".into(), serde_json::Value::String(g.query.clone()));
+    if let Some(v) = &g.variables {
+        body.insert("variables".into(), v.clone());
+    }
+    if let Some(name) = &g.operation_name {
+        body.insert("operationName".into(), serde_json::Value::String(name.clone()));
+    }
+    let mut headers = g.headers.clone();
+    if !headers
+        .iter()
+        .any(|h| h.name.eq_ignore_ascii_case("content-type"))
+    {
+        headers.push(KeyValue {
+            name: "Content-Type".into(),
+            value: "application/json".into(),
+            enabled: true,
+        });
+    }
+    RestRequest {
+        method: argos_core::HttpMethod::Post,
+        url: g.url.clone(),
+        query: Vec::new(),
+        headers,
+        auth: g.auth.clone(),
+        body: Some(BodyDraft::Json {
+            value: serde_json::Value::Object(body),
+        }),
+    }
 }
 
 fn apply_inheritance(rest: &RestRequest, ancestors: &[Folder]) -> RestRequest {

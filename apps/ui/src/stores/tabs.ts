@@ -181,53 +181,51 @@ export function openOrFocusTabForRequest(path: string, draft: RequestDraft): voi
   // Pull values out of the on-disk RestRequest into the editor draft via
   // patchRequest (we already have the tab state, ensure() is a no-op now).
   patchRequest(tab.id, (r) => {
-    if (draft.type !== 'rest') return;
-    r.method = draft.method;
+    // Auth + scripts + URL are shared across all variants — map them
+    // first so the editor switcher (when wired up in chunk 3) doesn't
+    // lose them when toggling protocol.
     r.url = draft.url;
-    r.headers = draft.headers.map((h) => ({ name: h.name, value: h.value, enabled: h.enabled }));
-    r.query = draft.query.map((q) => ({ name: q.name, value: q.value, enabled: q.enabled }));
-
-    // auth — map on-disk AuthConfig to DraftAuth.
-    if (!draft.auth) {
-      r.auth = { kind: 'none' };
-    } else if (draft.auth.type === 'inherit') {
-      r.auth = { kind: 'inherit' };
-    } else if (draft.auth.type === 'bearer') {
-      r.auth = { kind: 'bearer', token: draft.auth.token };
-    } else if (draft.auth.type === 'basic') {
-      r.auth = { kind: 'basic', username: draft.auth.username, password: draft.auth.password };
-    } else if (draft.auth.type === 'api_key') {
-      r.auth = {
-        kind: 'api_key',
-        name: draft.auth.name,
-        value: draft.auth.value,
-        location: draft.auth.location,
-      };
-    }
-
     r.preRequest = draft.scripts?.pre_request ?? '';
     r.tests = draft.scripts?.tests ?? '';
+    r.auth = authToDraft(draft.auth);
+    r.headers = draft.headers.map((h) => ({ name: h.name, value: h.value, enabled: h.enabled }));
 
-    if (!draft.body) {
-      r.bodyKind = 'none';
-      r.bodyText = '';
+    if (draft.type === 'rest') {
+      r.method = draft.method;
+      r.query = draft.query.map((q) => ({ name: q.name, value: q.value, enabled: q.enabled }));
+      if (!draft.body) {
+        r.bodyKind = 'none';
+        r.bodyText = '';
+        return;
+      }
+      if (draft.body.kind === 'json') {
+        r.bodyKind = 'json';
+        r.bodyContentType = 'application/json';
+        r.bodyText = JSON.stringify(draft.body.value, null, 2);
+      } else if (draft.body.kind === 'text') {
+        r.bodyKind = 'text';
+        r.bodyContentType = draft.body.content_type;
+        r.bodyText = draft.body.content;
+      } else if (draft.body.kind === 'form_url_encoded') {
+        r.bodyKind = 'form';
+        r.bodyContentType = 'application/x-www-form-urlencoded';
+        r.bodyText = draft.body.fields
+          .map((f) => `${encodeURIComponent(f.name)}=${encodeURIComponent(f.value)}`)
+          .join('&');
+      }
       return;
     }
-    if (draft.body.kind === 'json') {
-      r.bodyKind = 'json';
-      r.bodyContentType = 'application/json';
-      r.bodyText = JSON.stringify(draft.body.value, null, 2);
-    } else if (draft.body.kind === 'text') {
-      r.bodyKind = 'text';
-      r.bodyContentType = draft.body.content_type;
-      r.bodyText = draft.body.content;
-    } else if (draft.body.kind === 'form_url_encoded') {
-      r.bodyKind = 'form';
-      r.bodyContentType = 'application/x-www-form-urlencoded';
-      r.bodyText = draft.body.fields
-        .map((f) => `${encodeURIComponent(f.name)}=${encodeURIComponent(f.value)}`)
-        .join('&');
+
+    if (draft.type === 'graphql') {
+      r.method = 'POST';
+      r.graphql.query = draft.query;
+      r.graphql.operationName = draft.operation_name ?? '';
+      r.graphql.variablesText =
+        draft.variables == null || draft.variables === undefined
+          ? ''
+          : JSON.stringify(draft.variables, null, 2);
     }
+    // websocket has no editor in chunk 2 — chunk 3 fills in.
   });
 
   setTabs((list) => [...list, tab]);
@@ -263,10 +261,61 @@ export function tabAsDraft(tabId: string): RequestDraft | null {
   const r = getRequest(tabId);
   const t = tabs().find((x) => x.id === tabId);
   if (!r || !t) return null;
-  return {
-    kind: 'request',
+
+  const common = {
+    kind: 'request' as const,
     name: t.title,
     description: null,
+    scripts: {
+      pre_request: r.preRequest.trim().length > 0 ? r.preRequest : null,
+      tests: r.tests.trim().length > 0 ? r.tests : null,
+    },
+    schema_ref: null,
+  };
+
+  if (t.protocol === 'graphql') {
+    let variables: unknown | null = null;
+    if (r.graphql.variablesText.trim().length > 0) {
+      try {
+        variables = JSON.parse(r.graphql.variablesText);
+      } catch {
+        // Keep whatever the user typed as a string so saves round-trip
+        // — the GraphQL editor surfaces the JSON parse error
+        // separately.
+        variables = r.graphql.variablesText;
+      }
+    }
+    return {
+      ...common,
+      type: 'graphql',
+      url: r.url,
+      query: r.graphql.query,
+      variables,
+      operation_name:
+        r.graphql.operationName.trim().length > 0 ? r.graphql.operationName : null,
+      headers: r.headers
+        .filter((h) => h.name.length > 0)
+        .map((h) => ({ name: h.name, value: h.value, enabled: h.enabled })),
+      auth: buildAuth(r),
+    };
+  }
+
+  if (t.protocol === 'websocket') {
+    return {
+      ...common,
+      type: 'websocket',
+      url: r.url,
+      subprotocols: [],
+      headers: r.headers
+        .filter((h) => h.name.length > 0)
+        .map((h) => ({ name: h.name, value: h.value, enabled: h.enabled })),
+      auth: buildAuth(r),
+      messages: [],
+    };
+  }
+
+  return {
+    ...common,
     type: 'rest',
     method: r.method,
     url: r.url,
@@ -278,11 +327,21 @@ export function tabAsDraft(tabId: string): RequestDraft | null {
       .map((q) => ({ name: q.name, value: q.value, enabled: q.enabled })),
     auth: buildAuth(r),
     body: buildBody(r),
-    scripts: {
-      pre_request: r.preRequest.trim().length > 0 ? r.preRequest : null,
-      tests: r.tests.trim().length > 0 ? r.tests : null,
-    },
-    schema_ref: null,
+  };
+}
+
+/** Convert an on-disk `AuthConfig` into the editor's `DraftAuth`. */
+function authToDraft(auth: RestRequest['auth']): DraftRequest['auth'] {
+  if (!auth) return { kind: 'none' };
+  if (auth.type === 'inherit') return { kind: 'inherit' };
+  if (auth.type === 'bearer') return { kind: 'bearer', token: auth.token };
+  if (auth.type === 'basic')
+    return { kind: 'basic', username: auth.username, password: auth.password };
+  return {
+    kind: 'api_key',
+    name: auth.name,
+    value: auth.value,
+    location: auth.location,
   };
 }
 

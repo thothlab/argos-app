@@ -36,6 +36,23 @@ export type DraftAuth =
   | { kind: 'basic'; username: string; password: string }
   | { kind: 'api_key'; name: string; value: string; location: ApiKeyLocation };
 
+/**
+ * GraphQL-specific editor fields. Only meaningful when the active
+ * tab's `protocol === 'graphql'`. We store these inline on the draft
+ * (rather than in a parallel store) so save / autosave already covers
+ * them and the editor mutation API stays uniform.
+ */
+export type GraphqlDraftFields = {
+  /** GraphQL document. */
+  query: string;
+  /** Raw JSON text for `variables`. We don't parse until send so
+   *  in-flight edits don't bounce against a strict validator. */
+  variablesText: string;
+  /** `operationName` — required when the document declares multiple
+   *  named operations. Empty string means "let the server pick". */
+  operationName: string;
+};
+
 export type DraftRequest = {
   method: HttpMethod;
   url: string;
@@ -47,6 +64,7 @@ export type DraftRequest = {
   bodyContentType: string;
   preRequest: string;
   tests: string;
+  graphql: GraphqlDraftFields;
 };
 
 export type ResponseState =
@@ -80,7 +98,25 @@ export function emptyDraft(method: HttpMethod = 'GET'): DraftRequest {
     bodyContentType: 'application/json',
     preRequest: '',
     tests: '',
+    graphql: { query: '', variablesText: '', operationName: '' },
   };
+}
+
+// ---- GraphQL field mutations ---------------------------------------------
+
+export function setGraphqlQuery(tabId: string, query: string): void {
+  if (!tabStates[tabId]) return;
+  setTabStatesRaw(tabId, 'request', 'graphql', 'query', query);
+}
+
+export function setGraphqlVariables(tabId: string, text: string): void {
+  if (!tabStates[tabId]) return;
+  setTabStatesRaw(tabId, 'request', 'graphql', 'variablesText', text);
+}
+
+export function setGraphqlOperationName(tabId: string, name: string): void {
+  if (!tabStates[tabId]) return;
+  setTabStatesRaw(tabId, 'request', 'graphql', 'operationName', name);
 }
 
 const IDLE_RESPONSE: ResponseState = { status: 'idle' };
