@@ -77,6 +77,25 @@ export async function curlToRequest(input: string): Promise<HttpRequest> {
   return invokeCommand<HttpRequest>('curl_to_request', { input });
 }
 
+/** Supported targets for the "Copy as code" menu. Mirrors the
+ *  switch in `request_to_code` on the Rust side. */
+export type CodegenTarget =
+  | 'curl'
+  | 'fetch-browser'
+  | 'fetch-node'
+  | 'python'
+  | 'go'
+  | 'rust';
+
+/** Render the request as a snippet in the given language. */
+export async function requestToCode(
+  req: HttpRequest,
+  target: CodegenTarget,
+  env: Record<string, string>,
+): Promise<string> {
+  return invokeCommand<string>('request_to_code', { req, target, env });
+}
+
 /** Result of a Postman v2.1 import — counts plus paths the UI can use
  *  to scroll the workspace tree to the freshly created folder / env. */
 export type PostmanImportReport = {

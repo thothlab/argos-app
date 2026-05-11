@@ -6,9 +6,10 @@
  * E3 alongside variable substitution.
  */
 
-import { Copy, Loader2, Send } from 'lucide-solid';
+import { ChevronDown, Copy, Loader2, Send } from 'lucide-solid';
+import { DropdownMenu } from '@kobalte/core/dropdown-menu';
 
-import { requestToCurl, sendRequest } from '../lib/api';
+import { requestToCode, sendRequest, type CodegenTarget } from '../lib/api';
 import { bind, label } from '../lib/hotkeys';
 import { applyFolderInheritance, findAncestors } from '../lib/inherit';
 import { activeEnvVars } from '../stores/active-env';
@@ -26,6 +27,15 @@ import { workspace } from '../stores/workspace';
 import type { HttpMethod } from '../types/http';
 
 import MethodPicker from './MethodPicker';
+
+const COPY_TARGETS: Array<{ id: CodegenTarget; label: string }> = [
+  { id: 'curl', label: 'cURL' },
+  { id: 'fetch-browser', label: 'JavaScript — browser fetch' },
+  { id: 'fetch-node', label: 'JavaScript — Node fetch' },
+  { id: 'python', label: 'Python — requests' },
+  { id: 'go', label: 'Go — net/http' },
+  { id: 'rust', label: 'Rust — reqwest' },
+];
 
 export default function UrlBar() {
   // ⌘Enter sends the active tab's request from anywhere in the app.
@@ -135,19 +145,32 @@ export default function UrlBar() {
         <span class="text-[13px]">{isLoading() ? 'Sending…' : 'Send'}</span>
       </button>
 
-      <button
-        type="button"
-        class="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary disabled:opacity-50"
-        disabled={!tabId()}
-        title="Copy as cURL"
-        onClick={() => void copyAsCurl()}
-      >
-        <Copy size={14} />
-      </button>
+      <DropdownMenu>
+        <DropdownMenu.Trigger
+          class="ml-1 flex h-9 shrink-0 items-center gap-1 rounded-md px-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary disabled:opacity-50"
+          disabled={!tabId()}
+          title="Copy as code"
+        >
+          <Copy size={14} />
+          <ChevronDown size={11} />
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content class="z-50 min-w-56 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
+            {COPY_TARGETS.map((t) => (
+              <DropdownMenu.Item
+                class="cursor-pointer px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+                onSelect={() => void copyAs(t.id, t.label)}
+              >
+                {t.label}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
     </div>
   );
 
-  async function copyAsCurl(): Promise<void> {
+  async function copyAs(target: CodegenTarget, label: string): Promise<void> {
     const id = tabId();
     if (!id) return;
     const d = draft();
@@ -157,10 +180,12 @@ export default function UrlBar() {
     const merged = applyFolderInheritance(d, ancestors);
     const wire = toWireRequest(merged);
     try {
-      const cmd = await requestToCurl(wire, activeEnvVars());
-      await navigator.clipboard.writeText(cmd);
+      const snippet = await requestToCode(wire, target, activeEnvVars());
+      await navigator.clipboard.writeText(snippet);
     } catch (e) {
-      window.alert(`Could not copy: ${e instanceof Error ? e.message : String(e)}`);
+      window.alert(
+        `Could not copy as ${label}: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 }
