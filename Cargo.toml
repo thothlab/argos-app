@@ -23,6 +23,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", 
 # HTTP
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "gzip", "brotli", "deflate"] }
 hyper = "1"
+# WebSocket client. rustls-tls-webpki-roots avoids pulling native-tls
+# (we match reqwest's rustls choice for a single TLS backend).
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["rustls-tls-webpki-roots", "connect"] }
+futures-util = "0.3"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

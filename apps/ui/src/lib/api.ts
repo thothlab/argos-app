@@ -218,6 +218,34 @@ export async function treeCreateFolder(parentDir: string, name: string): Promise
   return invokeCommand<string>('tree_create_folder', { parentDir, name });
 }
 
+// ---- WebSocket ----------------------------------------------------------
+
+/** Open a WebSocket connection. Events flow back via the `ws://event`
+ *  Tauri event channel — see `stores/ws.ts`. */
+export async function wsConnect(
+  connectionId: string,
+  url: string,
+  subprotocols: string[] = [],
+  headers: Array<[string, string]> = [],
+  env: Record<string, string> = {},
+): Promise<void> {
+  return invokeCommand<void>('ws_connect', {
+    connectionId,
+    url,
+    subprotocols,
+    headers,
+    env,
+  });
+}
+
+export async function wsSend(connectionId: string, text: string): Promise<void> {
+  return invokeCommand<void>('ws_send', { connectionId, text });
+}
+
+export async function wsClose(connectionId: string): Promise<void> {
+  return invokeCommand<void>('ws_close', { connectionId });
+}
+
 export async function treeCreateRequest(
   parentDir: string,
   name: string,

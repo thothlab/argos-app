@@ -256,6 +256,26 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
               }}
             />
             <MenuItem
+              icon={<FilePlus size={13} />}
+              label="New WebSocket connection"
+              onSelect={async () => {
+                const name = window.prompt('Request name:');
+                if (!name) return;
+                try {
+                  const path = await treeCreateRequest(props.node.path, name, null, 'websocket');
+                  await reloadWorkspace();
+                  setOpen(true);
+                  const fresh = workspace();
+                  if (fresh) {
+                    const node = findRequest(fresh.tree, path);
+                    if (node) openOrFocusTabForRequest(node.path, node.draft);
+                  }
+                } catch (e) {
+                  alert(`Could not create request:\n\n${String(e)}`);
+                }
+              }}
+            />
+            <MenuItem
               icon={<FolderPlus size={13} />}
               label="New folder"
               onSelect={async () => {

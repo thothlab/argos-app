@@ -25,6 +25,7 @@ pub mod http;
 pub mod imports;
 pub mod vars;
 pub mod workspace;
+pub mod ws;
 
 pub use http::{
     HttpBody, HttpClient, HttpError, HttpHeader, HttpMethod, HttpRequest, HttpResponse,

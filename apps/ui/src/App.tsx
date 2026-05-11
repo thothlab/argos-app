@@ -7,15 +7,18 @@ import ProtocolPlaceholder from './components/ProtocolPlaceholder';
 import RequestEditor from './components/RequestEditor';
 import ResponsePane from './components/ResponsePane';
 import Splitter from './components/Splitter';
+import WebsocketEditor from './components/WebsocketEditor';
 import WelcomeScreen from './components/WelcomeScreen';
 import { installAutosave } from './lib/autosave';
 import { bind } from './lib/hotkeys';
 import { saveActiveTab } from './lib/save';
 import { activeTab, activeTabId } from './stores/tabs';
 import { workspace } from './stores/workspace';
+import { installWsEventListener } from './stores/ws';
 
 export default function App() {
   installAutosave();
+  void installWsEventListener();
 
   // ⌘S saves the active tab. Scratch tabs (no `path`) trigger a Save-As
   // dialog the first time, then save directly thereafter.
@@ -53,6 +56,9 @@ export default function App() {
         }
         if (protocol === 'graphql') {
           return <Splitter left={() => <GraphqlEditor />} right={() => <ResponsePane />} />;
+        }
+        if (protocol === 'websocket') {
+          return <WebsocketEditor />;
         }
         return <ProtocolPlaceholder protocol={protocol} />;
       })()}

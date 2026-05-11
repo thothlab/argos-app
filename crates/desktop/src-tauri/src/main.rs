@@ -17,14 +17,15 @@ use argos_core::imports::insomnia;
 use argos_core::imports::openapi;
 use argos_core::imports::postman;
 use argos_core::imports::ImportItem;
+use argos_core::ws::{self as ws_core, WsConnectOptions, WsDirection, WsEvent, WsHandle};
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
 use argos_scripting::{
     run_pre_request, run_tests, ScriptBody, ScriptFormField, ScriptHeader, ScriptRequest,
     ScriptResponse, TestResult,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State};
-use tokio::sync::OnceCell;
+use tauri::{Emitter, Manager, State};
+use tokio::sync::{Mutex, OnceCell};
 
 use watcher::ActiveWatcher;
 
@@ -38,6 +39,11 @@ async fn http_client(state: &AppState) -> Result<&HttpClient, String> {
         .get_or_try_init(|| async { HttpClient::new().map_err(|e| e.to_string()) })
         .await
 }
+
+/// Live WebSocket connections, keyed by the client-supplied connection
+/// id. The handle owns the spawned task; dropping it terminates the
+/// connection (see `argos_core::ws::WsHandle::Drop`).
+type WsRegistry = Arc<Mutex<HashMap<String, WsHandle>>>;
 
 // ---- core / health -------------------------------------------------------
 
@@ -186,6 +192,142 @@ async fn send_request(
         env_updates,
         env_unsets,
     })
+}
+
+// ---- WebSocket ----------------------------------------------------------
+
+/// Open a WebSocket connection identified by `connection_id`. The
+/// frontend chooses the id (typically a per-tab `nanoid`) so events
+/// can be routed back to the right view. Calling `ws_connect` twice
+/// with the same id replaces the previous connection.
+///
+/// Events are emitted on `ws://event` with payload
+/// `{ connection_id, kind, ...fields }`:
+///   - `kind: "connected"`
+///   - `kind: "message"`, `direction`, `body`, `timestamp_ms`
+///   - `kind: "binary"`,  `direction`, `bytes`, `timestamp_ms`
+///   - `kind: "closed"`,  `code`, `reason`
+///   - `kind: "error"`,   `message`
+#[tauri::command]
+async fn ws_connect(
+    app: tauri::AppHandle,
+    registry: State<'_, WsRegistry>,
+    connection_id: String,
+    url: String,
+    subprotocols: Option<Vec<String>>,
+    headers: Option<Vec<(String, String)>>,
+    env: Option<HashMap<String, String>>,
+) -> Result<(), String> {
+    // Resolve `{{var}}` in url + headers so the WS picks up env
+    // variables the same way the HTTP engine does.
+    let mut resolver = Resolver::new(env.unwrap_or_default());
+    let resolved_url = resolver.resolve(&url);
+    let resolved_headers = headers
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(k, v)| (resolver.resolve(&k), resolver.resolve(&v)))
+        .collect();
+    let handle = ws_core::connect(WsConnectOptions {
+        url: resolved_url,
+        subprotocols: subprotocols.unwrap_or_default(),
+        headers: resolved_headers,
+    })?;
+
+    // Spawn an event pump. The pump owns a clone of the receiver via
+    // mem::take so we can keep the WsHandle in the registry with a
+    // sender channel and a JoinHandle.
+    let app_clone = app.clone();
+    let id_for_pump = connection_id.clone();
+    let registry_for_drop = registry.inner().clone();
+    let mut handle = handle;
+    let mut events = std::mem::replace(&mut handle.events, tokio::sync::mpsc::channel(1).1);
+    tokio::spawn(async move {
+        while let Some(ev) = events.recv().await {
+            let payload = ws_event_to_payload(&id_for_pump, &ev);
+            let _ = app_clone.emit("ws://event", payload);
+            if matches!(ev, WsEvent::Closed { .. } | WsEvent::Error(_)) {
+                registry_for_drop.lock().await.remove(&id_for_pump);
+                break;
+            }
+        }
+    });
+
+    registry
+        .inner()
+        .lock()
+        .await
+        .insert(connection_id, handle);
+    Ok(())
+}
+
+#[tauri::command]
+async fn ws_send(
+    registry: State<'_, WsRegistry>,
+    connection_id: String,
+    text: String,
+) -> Result<(), String> {
+    let guard = registry.inner().lock().await;
+    let handle = guard
+        .get(&connection_id)
+        .ok_or_else(|| format!("no live connection: {connection_id}"))?;
+    handle.send_text(text).map_err(str::to_string)
+}
+
+#[tauri::command]
+async fn ws_close(
+    registry: State<'_, WsRegistry>,
+    connection_id: String,
+) -> Result<(), String> {
+    let mut guard = registry.inner().lock().await;
+    if let Some(handle) = guard.remove(&connection_id) {
+        handle.close();
+    }
+    Ok(())
+}
+
+fn ws_event_to_payload(connection_id: &str, ev: &WsEvent) -> serde_json::Value {
+    use serde_json::json;
+    match ev {
+        WsEvent::Connected => json!({ "connection_id": connection_id, "kind": "connected" }),
+        WsEvent::Message {
+            direction,
+            body,
+            timestamp_ms,
+        } => json!({
+            "connection_id": connection_id,
+            "kind": "message",
+            "direction": direction.as_str(),
+            "body": body,
+            "timestamp_ms": timestamp_ms.to_string(),
+        }),
+        WsEvent::Binary {
+            direction,
+            bytes,
+            timestamp_ms,
+        } => json!({
+            "connection_id": connection_id,
+            "kind": "binary",
+            "direction": direction.as_str(),
+            "bytes": bytes,
+            "timestamp_ms": timestamp_ms.to_string(),
+        }),
+        WsEvent::Closed { code, reason } => json!({
+            "connection_id": connection_id,
+            "kind": "closed",
+            "code": code,
+            "reason": reason,
+        }),
+        WsEvent::Error(msg) => json!({
+            "connection_id": connection_id,
+            "kind": "error",
+            "message": msg,
+        }),
+    }
+}
+
+#[allow(dead_code)]
+fn _ws_direction_typecheck() -> WsDirection {
+    WsDirection::Incoming
 }
 
 /// Render the request as a `curl` invocation. Resolves `{{var}}` first using
@@ -1128,10 +1270,12 @@ fn main() {
 
     let state: AppState = Arc::new(OnceCell::new());
     let active_watcher = ActiveWatcher::default();
+    let ws_registry: WsRegistry = Arc::new(Mutex::new(HashMap::new()));
 
     tauri::Builder::default()
         .manage(state)
         .manage(active_watcher)
+        .manage(ws_registry)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -1139,6 +1283,9 @@ fn main() {
             core_version,
             ping,
             send_request,
+            ws_connect,
+            ws_send,
+            ws_close,
             request_to_curl,
             curl_to_request,
             postman_import,
