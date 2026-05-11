@@ -14,6 +14,7 @@ use argos_core::exports::{har, postman as postman_export};
 use argos_core::format::{slugify, EnvVar, Environment, Folder, RequestDraft};
 use argos_core::imports::bruno;
 use argos_core::imports::insomnia;
+use argos_core::imports::openapi;
 use argos_core::imports::postman;
 use argos_core::imports::ImportItem;
 use argos_core::{HttpClient, HttpMethod, HttpRequest, HttpResponse, Resolver, Workspace};
@@ -310,6 +311,20 @@ fn insomnia_import(
 ) -> Result<PostmanImportReport, String> {
     let json = read_inline_or_path(&source, inline.unwrap_or(false))?;
     let collection = insomnia::from_json(&json).map_err(|e| e.to_string())?;
+    materialise_import(&workspace_root, collection)
+}
+
+/// Import an OpenAPI 3.x document (JSON or YAML). Same materialisation
+/// path as the other importers; the parser accepts either format and
+/// silently picks the right one based on what serde manages to decode.
+#[tauri::command]
+fn openapi_import(
+    workspace_root: String,
+    source: String,
+    inline: Option<bool>,
+) -> Result<PostmanImportReport, String> {
+    let text = read_inline_or_path(&source, inline.unwrap_or(false))?;
+    let collection = openapi::from_str(&text).map_err(|e| e.to_string())?;
     materialise_import(&workspace_root, collection)
 }
 
@@ -982,6 +997,7 @@ fn main() {
             postman_export,
             insomnia_import,
             bruno_import,
+            openapi_import,
             run_export_har,
             workspace_open,
             workspace_create,

@@ -31,6 +31,7 @@ import { closeAllTabs } from '../stores/tabs';
 import {
   brunoImport,
   insomniaImport,
+  openapiImport,
   postmanExport,
   postmanImport,
   workspaceClose,
@@ -116,6 +117,12 @@ function CurlImportControl() {
             >
               <span>From Bruno collection (folder)…</span>
             </DropdownMenu.Item>
+            <DropdownMenu.Item
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              onSelect={() => void importOpenApiFlow()}
+            >
+              <span>From OpenAPI 3.x (JSON / YAML)…</span>
+            </DropdownMenu.Item>
             <div class="my-1 h-px bg-border" />
             <DropdownMenu.Item
               class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
@@ -144,6 +151,14 @@ async function importInsomniaFlow(): Promise<void> {
     pickerLabel: 'Insomnia v4 export',
     pickerExtensions: ['json'],
     importer: insomniaImport,
+  });
+}
+
+async function importOpenApiFlow(): Promise<void> {
+  await runImportFlow({
+    pickerLabel: 'OpenAPI 3.x document',
+    pickerExtensions: ['json', 'yaml', 'yml'],
+    importer: openapiImport,
   });
 }
 

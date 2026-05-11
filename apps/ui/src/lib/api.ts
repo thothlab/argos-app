@@ -128,6 +128,21 @@ export async function brunoImport(
   });
 }
 
+/** Import an OpenAPI 3.x document (JSON or YAML) into the workspace.
+ *  `source` is a path on disk; pass `inline = true` to send the raw
+ *  document text instead. */
+export async function openapiImport(
+  workspaceRoot: string,
+  source: string,
+  inline = false,
+): Promise<PostmanImportReport> {
+  return invokeCommand<PostmanImportReport>('openapi_import', {
+    workspaceRoot,
+    source,
+    inline,
+  });
+}
+
 /** Export the active workspace as a Postman v2.1 collection JSON.
  *  Returns the absolute path of the written file. */
 export async function postmanExport(
