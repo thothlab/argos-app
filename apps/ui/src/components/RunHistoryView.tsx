@@ -10,6 +10,7 @@ import { Download } from 'lucide-solid';
 import { For, Show } from 'solid-js';
 
 import { runExportHar } from '../lib/api';
+import { notify, notifyError } from '../lib/toast';
 import { setResponse } from '../stores/request';
 import { runsFor, type Run } from '../stores/runs';
 import { activeTabId } from '../stores/tabs';
@@ -144,15 +145,15 @@ async function exportRunAsHar(run: Run): Promise<void> {
       filters: [{ name: 'HAR 1.2', extensions: ['har'] }],
     });
   } catch (e) {
-    window.alert(`Could not open file picker: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('Could not open file picker', e);
     return;
   }
   if (!target) return;
 
   try {
     const written = await runExportHar(run.request, run.response, iso, target);
-    window.alert(`Saved HAR to ${written}.`);
+    notify.success('HAR export', `Saved to ${written}.`);
   } catch (e) {
-    window.alert(`HAR export failed: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('HAR export failed', e);
   }
 }

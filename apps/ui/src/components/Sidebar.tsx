@@ -36,6 +36,7 @@ import {
 } from '../lib/api';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { activeTab, openOrFocusTabForRequest } from '../stores/tabs';
+import { notifyError } from '../lib/toast';
 import type { TreeNode } from '../types/workspace';
 
 export default function Sidebar() {
@@ -69,7 +70,7 @@ export default function Sidebar() {
                       await treeCreateFolder(collectionsRoot(ws), name);
                       await reloadWorkspace();
                     } catch (e) {
-                      alert(`Could not create folder:\n\n${String(e)}`);
+                      notifyError('Could not create folder', e);
                     }
                   }}
                 >
@@ -94,7 +95,7 @@ export default function Sidebar() {
                         if (node) openOrFocusTabForRequest(node.path, node.draft);
                       }
                     } catch (e) {
-                      alert(`Could not create request:\n\n${String(e)}`);
+                      notifyError('Could not create request', e);
                     }
                   }}
                 >
@@ -179,7 +180,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
       await treeMove(src, props.node.path);
       await reloadWorkspace();
     } catch (err) {
-      alert(`Move failed:\n\n${String(err)}`);
+      notifyError('Move failed', err);
     }
   }
 
@@ -231,7 +232,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
                     if (node) openOrFocusTabForRequest(node.path, node.draft);
                   }
                 } catch (e) {
-                  alert(`Could not create request:\n\n${String(e)}`);
+                  notifyError('Could not create request', e);
                 }
               }}
             />
@@ -251,7 +252,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
                     if (node) openOrFocusTabForRequest(node.path, node.draft);
                   }
                 } catch (e) {
-                  alert(`Could not create request:\n\n${String(e)}`);
+                  notifyError('Could not create request', e);
                 }
               }}
             />
@@ -271,7 +272,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
                     if (node) openOrFocusTabForRequest(node.path, node.draft);
                   }
                 } catch (e) {
-                  alert(`Could not create request:\n\n${String(e)}`);
+                  notifyError('Could not create request', e);
                 }
               }}
             />
@@ -286,7 +287,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
                   await reloadWorkspace();
                   setOpen(true);
                 } catch (e) {
-                  alert(`Could not create folder:\n\n${String(e)}`);
+                  notifyError('Could not create folder', e);
                 }
               }}
             />
@@ -301,7 +302,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
                   await treeRename(props.node.path, next);
                   await reloadWorkspace();
                 } catch (e) {
-                  alert(`Rename failed:\n\n${String(e)}`);
+                  notifyError('Rename failed', e);
                 }
               }}
             />
@@ -315,7 +316,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
                   await treeDelete(props.node.path);
                   await reloadWorkspace();
                 } catch (e) {
-                  alert(`Delete failed:\n\n${String(e)}`);
+                  notifyError('Delete failed', e);
                 }
               }}
             />
@@ -403,7 +404,7 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
                   await treeRename(props.node.path, next);
                   await reloadWorkspace();
                 } catch (e) {
-                  alert(`Rename failed:\n\n${String(e)}`);
+                  notifyError('Rename failed', e);
                 }
               }}
             />
@@ -417,7 +418,7 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
                   await treeDelete(props.node.path);
                   await reloadWorkspace();
                 } catch (e) {
-                  alert(`Delete failed:\n\n${String(e)}`);
+                  notifyError('Delete failed', e);
                 }
               }}
             />

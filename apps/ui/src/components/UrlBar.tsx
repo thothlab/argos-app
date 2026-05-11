@@ -24,6 +24,7 @@ import {
 } from '../stores/request';
 import { recordRun } from '../stores/runs';
 import { workspace } from '../stores/workspace';
+import { notify, notifyError } from '../lib/toast';
 import type { HttpMethod } from '../types/http';
 
 import MethodPicker from './MethodPicker';
@@ -182,10 +183,9 @@ export default function UrlBar() {
     try {
       const snippet = await requestToCode(wire, target, activeEnvVars());
       await navigator.clipboard.writeText(snippet);
+      notify.success(`Copied as ${label}`);
     } catch (e) {
-      window.alert(
-        `Could not copy as ${label}: ${e instanceof Error ? e.message : String(e)}`,
-      );
+      notifyError(`Could not copy as ${label}`, e);
     }
   }
 }
