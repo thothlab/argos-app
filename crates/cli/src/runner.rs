@@ -19,9 +19,15 @@ use argos_scripting::{
 };
 
 /// Options driving a single `argos run` invocation.
+#[derive(Default)]
 pub struct RunOptions {
     pub env_name: Option<String>,
     pub bail: bool,
+    /// Per-row overrides for data-driven runs. Folded into the env map
+    /// after `env_name` resolves, so iteration data wins over baseline
+    /// environment values when names collide. Empty for non-iterated
+    /// invocations.
+    pub data_row: HashMap<String, String>,
 }
 
 /// Aggregate outcome of a run — printed to stdout and returned for
@@ -87,7 +93,10 @@ pub async fn run(
     opts: RunOptions,
 ) -> anyhow::Result<RunReport> {
     let ws = Workspace::open(workspace_root)?;
-    let env_map = resolve_env(&ws, opts.env_name.as_deref())?;
+    let mut env_map = resolve_env(&ws, opts.env_name.as_deref())?;
+    for (k, v) in &opts.data_row {
+        env_map.insert(k.clone(), v.clone());
+    }
     let client = HttpClient::new()?;
 
     let mut report = RunReport::default();
