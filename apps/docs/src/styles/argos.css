@@ -1,0 +1,14 @@
+/* Argos brand accent for Starlight. Single tweak over the default
+   palette — Starlight's light/dark themes already handle contrast. */
+
+:root {
+  --sl-color-accent-low: #1f2937;
+  --sl-color-accent: #f97316;
+  --sl-color-accent-high: #fed7aa;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #fed7aa;
+  --sl-color-accent: #ea580c;
+  --sl-color-accent-high: #7c2d12;
+}
