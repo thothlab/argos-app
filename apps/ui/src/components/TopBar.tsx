@@ -38,6 +38,7 @@ import {
   workspaceReload,
 } from '../lib/api';
 import { label } from '../lib/hotkeys';
+import { notify, notifyError } from '../lib/toast';
 import CurlImportModal from './CurlImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
 
@@ -165,7 +166,7 @@ async function importOpenApiFlow(): Promise<void> {
 async function importBrunoFlow(): Promise<void> {
   const ws = workspace();
   if (!ws) {
-    window.alert('Open a workspace first.');
+    notify.info('Open a workspace first.');
     return;
   }
   let picked: string | string[] | null = null;
@@ -173,20 +174,21 @@ async function importBrunoFlow(): Promise<void> {
     const { open } = await import('@tauri-apps/plugin-dialog');
     picked = await open({ directory: true, multiple: false });
   } catch (e) {
-    window.alert(`Could not open folder picker: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('Could not open folder picker', e);
     return;
   }
   if (!picked || Array.isArray(picked)) return;
   try {
     const report = await brunoImport(ws.root, picked);
     const env = report.env_path ? `, ${report.variables_count} variables → env file` : '';
-    window.alert(
-      `Imported ${report.requests_created} requests in ${report.folders_created} folders${env}.`,
+    notify.success(
+      'Bruno import',
+      `${report.requests_created} requests in ${report.folders_created} folders${env}.`,
     );
     const refreshed = await workspaceReload(ws.root);
     setWorkspace(refreshed);
   } catch (e) {
-    window.alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('Import failed', e);
   }
 }
 
@@ -209,7 +211,7 @@ async function runImportFlow(opts: {
 }): Promise<void> {
   const ws = workspace();
   if (!ws) {
-    window.alert('Open a workspace first.');
+    notify.info('Open a workspace first.');
     return;
   }
   let picked: string | string[] | null = null;
@@ -220,7 +222,7 @@ async function runImportFlow(opts: {
       filters: [{ name: opts.pickerLabel, extensions: opts.pickerExtensions }],
     });
   } catch (e) {
-    window.alert(`Could not open file picker: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('Could not open file picker', e);
     return;
   }
   if (!picked || Array.isArray(picked)) return;
@@ -228,20 +230,21 @@ async function runImportFlow(opts: {
   try {
     const report = await opts.importer(ws.root, picked, false);
     const env = report.env_path ? `, ${report.variables_count} variables → env file` : '';
-    window.alert(
-      `Imported ${report.requests_created} requests in ${report.folders_created} folders${env}.`,
+    notify.success(
+      'Import complete',
+      `${report.requests_created} requests in ${report.folders_created} folders${env}.`,
     );
     const refreshed = await workspaceReload(ws.root);
     setWorkspace(refreshed);
   } catch (e) {
-    window.alert(`Import failed: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('Import failed', e);
   }
 }
 
 async function exportPostmanFlow(): Promise<void> {
   const ws = workspace();
   if (!ws) {
-    window.alert('Open a workspace first.');
+    notify.info('Open a workspace first.');
     return;
   }
   let target: string | null = null;
@@ -252,16 +255,16 @@ async function exportPostmanFlow(): Promise<void> {
       filters: [{ name: 'Postman v2.1 collection', extensions: ['json'] }],
     });
   } catch (e) {
-    window.alert(`Could not open file picker: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('Could not open file picker', e);
     return;
   }
   if (!target) return;
 
   try {
     const written = await postmanExport(ws.root, target);
-    window.alert(`Exported to ${written}.`);
+    notify.success('Export complete', `Wrote ${written}.`);
   } catch (e) {
-    window.alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
+    notifyError('Export failed', e);
   }
 }
 

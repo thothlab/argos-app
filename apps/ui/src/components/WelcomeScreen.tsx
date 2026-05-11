@@ -15,6 +15,7 @@ import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialo
 
 import { workspaceCreate, workspaceListRecent, workspaceOpen } from '../lib/api';
 import { isTauri } from '../lib/tauri';
+import { notify, notifyError } from '../lib/toast';
 import { setWorkspace } from '../stores/workspace';
 import type { RecentEntry } from '../types/workspace';
 
@@ -36,7 +37,7 @@ export default function WelcomeScreen() {
       const ws = await workspaceOpen(picked);
       setWorkspace(ws);
     } catch (e) {
-      alert(`Could not open workspace:\n\n${String(e)}`);
+      notifyError('Could not open workspace', e);
     }
   }
 
@@ -55,7 +56,7 @@ export default function WelcomeScreen() {
       const ws = await workspaceCreate(picked, name);
       setWorkspace(ws);
     } catch (e) {
-      alert(`Could not create workspace:\n\n${String(e)}`);
+      notifyError('Could not create workspace', e);
     }
   }
 
@@ -65,7 +66,7 @@ export default function WelcomeScreen() {
       setWorkspace(ws);
       refetch();
     } catch (e) {
-      alert(`Could not open workspace at ${entry.path}:\n\n${String(e)}`);
+      notifyError(`Could not open ${entry.path}`, e);
     }
   }
 
@@ -96,7 +97,10 @@ export default function WelcomeScreen() {
           label="Try sample workspace"
           hint=""
           onClick={() => {
-            alert('Sample workspaces ship after E2 alpha — bundling a tiny Postman-flavoured demo into the binary.');
+            notify.info(
+              'Sample workspaces',
+              'Ship after E2 alpha — bundling a Postman-flavoured demo into the binary.',
+            );
           }}
         />
       </div>

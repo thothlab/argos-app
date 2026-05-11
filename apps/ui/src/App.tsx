@@ -7,6 +7,7 @@ import ProtocolPlaceholder from './components/ProtocolPlaceholder';
 import RequestEditor from './components/RequestEditor';
 import ResponsePane from './components/ResponsePane';
 import Splitter from './components/Splitter';
+import Toaster from './components/Toaster';
 import WebsocketEditor from './components/WebsocketEditor';
 import WelcomeScreen from './components/WelcomeScreen';
 import { installAutosave } from './lib/autosave';
@@ -67,6 +68,7 @@ export default function App() {
 
   return (
     <>
+      <Toaster />
       <DropImportOverlay />
       <Show when={workspace()} fallback={<WelcomeScreen />}>
         <AppShell tabContent={tabContent} />
