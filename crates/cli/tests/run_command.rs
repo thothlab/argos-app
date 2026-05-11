@@ -165,3 +165,112 @@ fn run_with_unknown_env_errors_out() {
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains("nope") || stderr.contains("environment"));
 }
+
+#[test]
+fn run_with_iteration_data_csv_runs_each_row() {
+    // Mock /search returns 200 only when `q` is one of {alpha, beta},
+    // 500 otherwise. The CSV drives three iterations, all of which
+    // should succeed.
+    let server = MockServer::start();
+    let _ok = server.mock(|when, then| {
+        when.method(GET).path("/search").query_param("q", "alpha");
+        then.status(200).body("ok");
+    });
+    let _ok2 = server.mock(|when, then| {
+        when.method(GET).path("/search").query_param("q", "beta");
+        then.status(200).body("ok");
+    });
+    let _ok3 = server.mock(|when, then| {
+        when.method(GET).path("/search").query_param("q", "gamma");
+        then.status(200).body("ok");
+    });
+
+    let dir = tempfile::tempdir().unwrap();
+    Workspace::create(dir.path(), "iter").unwrap();
+    let collections = dir.path().join("collections");
+    std::fs::create_dir_all(&collections).unwrap();
+    let mut req = argos_core::format::RequestDraft::new_rest(
+        "Search",
+        HttpMethod::Get,
+        format!("{}/search", server.base_url()),
+    );
+    if let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant {
+        rest.query.push(KeyValue {
+            name: "q".into(),
+            value: "{{q}}".into(),
+            enabled: true,
+        });
+    }
+    req.scripts.tests =
+        Some("bru.test('status 200', () => { bru.expect(bru.res.status).toBe(200); });".into());
+    req.save(&collections.join("search.argos.yaml")).unwrap();
+
+    let data_path = dir.path().join("data.csv");
+    std::fs::write(&data_path, "q\nalpha\nbeta\ngamma\n").unwrap();
+
+    let out = Command::new(cli_bin())
+        .arg("run")
+        .arg(&collections)
+        .arg("--iteration-data")
+        .arg(&data_path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected exit 0 — stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        stdout.contains("Iteration 1 of 3") && stdout.contains("Iteration 3 of 3"),
+        "missing iteration banners in: {stdout}"
+    );
+}
+
+#[test]
+fn run_with_iteration_data_json_is_supported() {
+    let server = MockServer::start();
+    let _ok = server.mock(|when, then| {
+        when.method(GET).path("/x").query_param("k", "1");
+        then.status(200);
+    });
+    let _ok2 = server.mock(|when, then| {
+        when.method(GET).path("/x").query_param("k", "2");
+        then.status(200);
+    });
+
+    let dir = tempfile::tempdir().unwrap();
+    Workspace::create(dir.path(), "iter-json").unwrap();
+    let collections = dir.path().join("collections");
+    std::fs::create_dir_all(&collections).unwrap();
+    let mut req = argos_core::format::RequestDraft::new_rest(
+        "X",
+        HttpMethod::Get,
+        format!("{}/x", server.base_url()),
+    );
+    if let argos_core::format::request::RequestVariant::Rest(rest) = &mut req.variant {
+        rest.query.push(KeyValue {
+            name: "k".into(),
+            value: "{{k}}".into(),
+            enabled: true,
+        });
+    }
+    req.save(&collections.join("x.argos.yaml")).unwrap();
+
+    let data_path = dir.path().join("data.json");
+    std::fs::write(&data_path, r#"[{"k":"1"},{"k":2}]"#).unwrap();
+
+    let out = Command::new(cli_bin())
+        .arg("run")
+        .arg(&collections)
+        .arg("--iteration-data")
+        .arg(&data_path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "expected exit 0 — stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

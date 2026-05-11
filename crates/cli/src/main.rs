@@ -3,6 +3,7 @@
 //! T7.1 added `argos list` and `argos validate`; T7.2 wires up
 //! `argos run` against the collection runner in `runner.rs`.
 
+mod iteration;
 mod runner;
 
 use std::path::{Path, PathBuf};
@@ -11,7 +12,7 @@ use argos_core::format::request::RequestVariant;
 use argos_core::{TreeNode, Workspace};
 use clap::{Parser, Subcommand};
 
-use runner::{print_report, RunOptions};
+use runner::{print_report, RunOptions, RunReport};
 
 #[derive(Parser)]
 #[command(
@@ -42,6 +43,11 @@ enum Commands {
         /// Stop on first failure.
         #[arg(long)]
         bail: bool,
+        /// Data-driven iterations. Path to a `.csv` or `.json` file —
+        /// each row / object is one full pass through `path`, with row
+        /// values bound as env overrides.
+        #[arg(long = "iteration-data", value_name = "FILE")]
+        iteration_data: Option<PathBuf>,
     },
     /// List requests / collections in the workspace.
     List {
@@ -64,7 +70,12 @@ fn main() -> anyhow::Result<()> {
             println!("argos {}", argos_core::version());
             println!("Run `argos --help` to see commands.");
         }
-        Some(Commands::Run { path, env, bail }) => {
+        Some(Commands::Run {
+            path,
+            env,
+            bail,
+            iteration_data,
+        }) => {
             let ws_root = cli
                 .workspace
                 .clone()
@@ -75,9 +86,34 @@ fn main() -> anyhow::Result<()> {
                     )
                 })?;
             let target = Path::new(&path).to_path_buf();
-            let report = run_command(&ws_root, &target, env, bail)?;
-            print_report(&report);
-            if report.failed() > 0 {
+
+            let rows = match iteration_data.as_deref() {
+                Some(p) => iteration::load(p)?,
+                None => Vec::new(),
+            };
+
+            let exit_failed = if rows.is_empty() {
+                let report = run_command(&ws_root, &target, env, bail, std::collections::HashMap::new())?;
+                print_report(&report);
+                report.failed() > 0
+            } else {
+                let total = rows.len();
+                let mut any_failed = false;
+                for (i, row) in rows.into_iter().enumerate() {
+                    println!("→ Iteration {} of {total}", i + 1);
+                    let report = run_command(&ws_root, &target, env.clone(), bail, row)?;
+                    print_report(&report);
+                    if report.failed() > 0 {
+                        any_failed = true;
+                        if bail {
+                            break;
+                        }
+                    }
+                }
+                any_failed
+            };
+
+            if exit_failed {
                 std::process::exit(1);
             }
         }
@@ -99,7 +135,8 @@ fn run_command(
     target: &Path,
     env: Option<String>,
     bail: bool,
-) -> anyhow::Result<runner::RunReport> {
+    data_row: std::collections::HashMap<String, String>,
+) -> anyhow::Result<RunReport> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -109,6 +146,7 @@ fn run_command(
         RunOptions {
             env_name: env,
             bail,
+            data_row,
         },
     ))
 }
