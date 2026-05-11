@@ -1,0 +1,35 @@
+# Run argos-web on the Mac Mini bound to 127.0.0.1:8743 — Caddy on
+# the VPS reaches it through the autossh reverse tunnel. Don't bind
+# 0.0.0.0 on the host; the container handles 0.0.0.0 internally,
+# the docker port mapping below restricts external exposure.
+
+services:
+  argos-web:
+    build:
+      context: ../..      # repo root — Dockerfile references the workspace
+      dockerfile: apps/web/Dockerfile
+    container_name: argos-web
+    restart: unless-stopped
+    # 127.0.0.1:8743 on the host → 8743 in the container. Not reachable
+    # from LAN — only through the SSH tunnel that targets localhost.
+    ports:
+      - "127.0.0.1:8743:8743"
+    environment:
+      ARGOS_BIND: "0.0.0.0:8743"
+      ARGOS_DATA_DIR: "/var/lib/argos-web"
+      ARGOS_DOCS_DIR: "/srv/argos-docs"
+      ARGOS_DOWNLOADS_BASE: "${ARGOS_DOWNLOADS_BASE:-https://github.com/argos-app/argos/releases/latest/download}"
+      RUST_LOG: "${RUST_LOG:-argos_web=info,tower_http=info}"
+    volumes:
+      # Crash reports + manifest.json survive container rebuilds.
+      - argos-web-data:/var/lib/argos-web
+      # Astro docs build (apps/docs/dist) mounted read-only.
+      - ../../apps/docs/dist:/srv/argos-docs:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/argos-web", "--help"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  argos-web-data:

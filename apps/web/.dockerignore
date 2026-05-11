@@ -1,0 +1,7 @@
+target
+node_modules
+.git
+**/dist
+apps/ui
+apps/docs/node_modules
+crates/desktop/target

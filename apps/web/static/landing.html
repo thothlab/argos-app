@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Argos — fast, git-native API client</title>
+<meta name="description" content="Argos is a fast, git-native API client for REST, GraphQL, and WebSocket. Closed alpha.">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafafa;
+    --fg: #18181b;
+    --muted: #6b6b75;
+    --card: #ffffff;
+    --border: #e5e5ea;
+    --accent: #ea580c;
+    --accent-fg: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0b0f;
+      --fg: #f7f7fa;
+      --muted: #8a8a93;
+      --card: #15151a;
+      --border: #26262d;
+      --accent: #f97316;
+      --accent-fg: #0b0b0f;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 6rem 1.5rem 4rem; }
+  header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
+  .logo { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; }
+  .logo-dot { width: 12px; height: 12px; background: var(--bg); border-radius: 50%; }
+  h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; margin: 0; }
+  .tag { color: var(--muted); margin-top: 0.5rem; font-size: 1rem; }
+  .hero p { font-size: 1.05rem; line-height: 1.5; color: var(--muted); }
+  .grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 2.5rem 0 1rem; }
+  .btn { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.9rem 1.1rem; border-radius: 10px; border: 1px solid var(--border); background: var(--card); color: var(--fg); text-decoration: none; transition: border-color .15s; }
+  .btn:hover { border-color: var(--accent); }
+  .btn .name { font-weight: 600; }
+  .btn .sub { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.78rem; color: var(--muted); }
+  .pill { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--accent); color: var(--accent-fg); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+  section { margin-top: 2.5rem; }
+  h2 { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.75rem; }
+  ul.feats { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem 1.25rem; }
+  ul.feats li { padding-left: 1rem; position: relative; font-size: 0.95rem; }
+  ul.feats li::before { content: "→"; position: absolute; left: 0; color: var(--accent); }
+  .links { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; font-size: 0.92rem; }
+  .links a { color: var(--fg); text-decoration: none; border-bottom: 1px solid var(--border); padding-bottom: 1px; }
+  .links a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+  footer { margin-top: 4rem; font-size: 0.78rem; color: var(--muted); line-height: 1.6; }
+  footer code { font-size: 0.85em; padding: 0.05em 0.4em; border-radius: 4px; background: var(--card); border: 1px solid var(--border); }
+  @media (max-width: 540px) {
+    .grid, ul.feats { grid-template-columns: 1fr; }
+    h1 { font-size: 1.65rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo"><div class="logo-dot"></div></div>
+    <div>
+      <h1>Argos <span class="pill">closed alpha</span></h1>
+      <p class="tag">Fast, git-native API client — REST, GraphQL, WebSocket.</p>
+    </div>
+  </header>
+
+  <section class="hero">
+    <p>Every request, environment and folder is a YAML file in your repo. Diffs review like code; merges resolve like code; secrets stay out of any cloud. A CI-ready CLI uses the same files the desktop UI does, with JUnit / JSON / HTML reporters that drop into GitHub Actions and GitLab without glue.</p>
+  </section>
+
+  <section>
+    <h2>Download</h2>
+    <div class="grid">
+      <a class="btn" href="/download/macos-aarch64">
+        <span class="name">macOS — Apple Silicon</span>
+        <span class="sub">.dmg</span>
+      </a>
+      <a class="btn" href="/download/macos-x64">
+        <span class="name">macOS — Intel</span>
+        <span class="sub">.dmg</span>
+      </a>
+      <a class="btn" href="/download/linux-x64">
+        <span class="name">Linux — x86_64</span>
+        <span class="sub">.AppImage</span>
+      </a>
+      <a class="btn" href="/download/windows-x64">
+        <span class="name">Windows — x86_64</span>
+        <span class="sub">.exe</span>
+      </a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Highlights</h2>
+    <ul class="feats">
+      <li>Multi-protocol — REST, GraphQL, WebSocket, one workspace</li>
+      <li>Imports Postman, Insomnia, Bruno, OpenAPI, curl</li>
+      <li>Pre-request + tests scripting (<code>bru.*</code> / <code>pm.*</code>)</li>
+      <li><code>argos run</code> CLI with JUnit / JSON / HTML reporters</li>
+      <li>Data-driven iterations (<code>--iteration-data</code>)</li>
+      <li>Copy as: curl / fetch / Python / Go / Rust</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Links</h2>
+    <div class="links">
+      <a href="/docs/">Documentation</a>
+      <a href="https://github.com/argos-app/argos">GitHub</a>
+      <a href="/docs/getting-started/">Getting started</a>
+      <a href="/docs/cli/ci/">CI integration</a>
+    </div>
+  </section>
+
+  <footer>
+    <p>Closed alpha — please report issues on GitHub. Crash reports, when you opt in, are anonymous (no PII), stored on the Argos team's server for up to 90 days, and used only to fix the panic that triggered them.</p>
+    <p>Source code Apache-2.0. © Argos contributors.</p>
+  </footer>
+</main>
+</body>
+</html>
