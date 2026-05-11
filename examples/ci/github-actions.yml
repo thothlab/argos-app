@@ -1,0 +1,69 @@
+# Run an Argos collection on every push / PR and publish the JUnit
+# report so GitHub annotates failed tests inline on the Checks tab.
+#
+# Copy this file to .github/workflows/argos.yml in the repo holding
+# your Argos workspace, adjust paths, and commit.
+
+name: argos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Argos is published as a single-binary release on each tag.
+      # Pin a version so CI is reproducible.
+      - name: Install argos
+        run: |
+          set -euo pipefail
+          ARGOS_VERSION="${ARGOS_VERSION:-latest}"
+          curl -fsSL \
+            "https://github.com/argos-app/argos/releases/${ARGOS_VERSION}/download/argos-x86_64-linux.tar.gz" \
+            | tar -xz
+          chmod +x ./argos
+          ./argos --help | head -1
+        env:
+          ARGOS_VERSION: latest
+
+      # `--reporter junit=...` writes a Surefire-style XML doc; the
+      # report-action below turns each <failure> into a Checks-tab
+      # annotation pointing at the failing request.
+      - name: Run collection
+        id: argos
+        run: |
+          ./argos run ./argos-workspace/collections \
+            --env ci \
+            --reporter junit=argos-report.xml \
+            --reporter json=argos-report.json
+        continue-on-error: true
+
+      - name: Publish JUnit report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: argos
+          path: argos-report.xml
+          reporter: java-junit
+          fail-on-error: true
+
+      - name: Upload raw reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: argos-reports
+          path: |
+            argos-report.xml
+            argos-report.json
+
+      - name: Fail the job if any request / test failed
+        if: steps.argos.outcome == 'failure'
+        run: exit 1

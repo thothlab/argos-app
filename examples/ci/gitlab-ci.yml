@@ -1,0 +1,33 @@
+# Run an Argos collection in a GitLab CI pipeline. Copy / merge into
+# your project's `.gitlab-ci.yml`.
+#
+# GitLab parses the JUnit XML artifact and surfaces each failing
+# request as a test in the pipeline UI ("Tests" tab).
+
+stages: [test]
+
+argos:
+  stage: test
+  image: ubuntu:24.04
+  variables:
+    ARGOS_VERSION: latest
+  before_script:
+    - apt-get update -qq && apt-get install -yqq --no-install-recommends curl ca-certificates
+    - curl -fsSL "https://github.com/argos-app/argos/releases/${ARGOS_VERSION}/download/argos-x86_64-linux.tar.gz" | tar -xz
+    - chmod +x ./argos
+    - ./argos --help | head -1
+  script:
+    - ./argos run ./argos-workspace/collections
+        --env ci
+        --reporter junit=argos-report.xml
+        --reporter json=argos-report.json
+        --reporter html=argos-report.html
+  artifacts:
+    when: always
+    paths:
+      - argos-report.html
+      - argos-report.json
+    reports:
+      junit: argos-report.xml
+  # GitLab's `junit:` report makes a failed test the source of truth
+  # for pass/fail — no extra `allow_failure` gymnastics needed.
