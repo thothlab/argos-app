@@ -1,0 +1,43 @@
+# Paste this block into /etc/caddy/Caddyfile on the VPS
+# (153.80.185.242), then:
+#
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+#
+# Caddy auto-issues a Let's Encrypt cert on first request — make sure
+# DNS for argos.thothlab.tech already points to the VPS IP before
+# reloading.
+
+argos.thothlab.tech {
+    # argos-web container on Mac Mini, exposed via autossh reverse
+    # tunnel on port 8743.
+    reverse_proxy localhost:8743
+
+    # API endpoints — keep crash POSTs from being rate-limited by
+    # Caddy's defaults. The service has its own per-IP limiter.
+    @api path /api/*
+    handle @api {
+        # Pass client IP to the upstream so the rate limiter sees
+        # real users, not the tunnel endpoint.
+        reverse_proxy localhost:8743 {
+            header_up X-Forwarded-For {remote_host}
+        }
+    }
+
+    # Tighter cache for static assets under /docs/ — Astro outputs
+    # immutable hashed filenames.
+    @docs_assets path /docs/_astro/*
+    handle @docs_assets {
+        header Cache-Control "public, max-age=31536000, immutable"
+        reverse_proxy localhost:8743
+    }
+
+    encode gzip zstd
+
+    log {
+        output file /var/log/caddy/argos.log {
+            roll_size 10MiB
+            roll_keep 5
+        }
+    }
+}

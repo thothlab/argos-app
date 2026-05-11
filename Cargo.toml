@@ -6,6 +6,7 @@ members = [
     "crates/core-wasm",
     "crates/desktop/src-tauri",
     "crates/scripting",
+    "apps/web",
 ]
 
 [workspace.package]
