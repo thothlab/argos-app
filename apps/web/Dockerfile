@@ -2,7 +2,7 @@
 # rebuild the whole world. Final image is `gcr.io/distroless/cc` —
 # minimal libc + the binary, no shell, ~25 MB.
 
-FROM rust:1.83-bookworm AS chef
+FROM rust:1.85-bookworm AS chef
 RUN cargo install cargo-chef --locked --version 0.1.71
 WORKDIR /build
 
@@ -18,7 +18,7 @@ RUN cargo chef cook --release --recipe-path recipe.json -p argos-web
 COPY . .
 RUN cargo build --release -p argos-web
 
-FROM gcr.io/distroless/cc-debian12:nonroot
+FROM gcr.io/distroless/cc-debian12
 COPY --from=builder /build/target/release/argos-web /usr/local/bin/argos-web
 ENV ARGOS_BIND=0.0.0.0:8743 \
     ARGOS_DATA_DIR=/var/lib/argos-web \
@@ -26,5 +26,9 @@ ENV ARGOS_BIND=0.0.0.0:8743 \
     ARGOS_DOWNLOADS_BASE=https://github.com/argos-app/argos/releases/latest/download \
     RUST_LOG=argos_web=info,tower_http=info
 EXPOSE 8743
-USER nonroot:nonroot
+# Runs as root inside the container so it can create $ARGOS_DATA_DIR
+# under the mounted volume (Docker mounts volumes root-owned by
+# default). Container itself is unprivileged on the host and only
+# binds 127.0.0.1, so the blast radius is small. TODO: switch back
+# to nonroot once we have an init-step that chowns the volume.
 ENTRYPOINT ["/usr/local/bin/argos-web"]

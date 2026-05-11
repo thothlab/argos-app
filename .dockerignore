@@ -1,0 +1,38 @@
+# Docker reads this from the build context root. apps/web/Dockerfile
+# uses `..` (repo root) as context to pick up the workspace
+# Cargo.toml + Cargo.lock + crates/.
+#
+# Everything below either is huge, irrelevant to argos-web, or both.
+
+# Rust build artefacts — 16+ GB locally.
+target/
+**/target/
+
+# JS / docs site — the docs are mounted at runtime as a separate
+# volume; we don't need them in the build context.
+node_modules/
+**/node_modules/
+apps/docs/dist/
+apps/docs/.astro/
+apps/ui/dist/
+
+# Heavy non-source assets.
+design.pen
+design-exports/
+
+# VCS + editor.
+.git/
+.gitignore
+.gitattributes
+**/.DS_Store
+.vscode/
+.idea/
+
+# Other apps' build outputs.
+crates/desktop/src-tauri/gen/
+crates/desktop/src-tauri/target/
+
+# Workspace docs (the spec) — not needed in the image.
+docs/
+examples/
+tasks/
