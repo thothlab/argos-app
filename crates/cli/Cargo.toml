@@ -25,3 +25,4 @@ tracing-subscriber = { workspace = true }
 [dev-dependencies]
 httpmock = { workspace = true }
 tempfile = { workspace = true }
+quick-xml = "0.36"

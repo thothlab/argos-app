@@ -4,6 +4,7 @@
 //! `argos run` against the collection runner in `runner.rs`.
 
 mod iteration;
+mod reporters;
 mod runner;
 
 use std::path::{Path, PathBuf};
@@ -12,6 +13,7 @@ use argos_core::format::request::RequestVariant;
 use argos_core::{TreeNode, Workspace};
 use clap::{Parser, Subcommand};
 
+use reporters::{IterationReport, ReporterFormat, RunReportAggregate};
 use runner::{print_report, RunOptions, RunReport};
 
 #[derive(Parser)]
@@ -48,6 +50,11 @@ enum Commands {
         /// values bound as env overrides.
         #[arg(long = "iteration-data", value_name = "FILE")]
         iteration_data: Option<PathBuf>,
+        /// Structured report. Repeat for multiple formats.
+        /// Syntax: `<format>` (writes to stdout) or `<format>=<path>`
+        /// (writes to a file). Formats: `json`, `junit`, `html`.
+        #[arg(long = "reporter", value_name = "FORMAT[=PATH]")]
+        reporters: Vec<String>,
     },
     /// List requests / collections in the workspace.
     List {
@@ -75,6 +82,7 @@ fn main() -> anyhow::Result<()> {
             env,
             bail,
             iteration_data,
+            reporters,
         }) => {
             let ws_root = cli
                 .workspace
@@ -92,10 +100,29 @@ fn main() -> anyhow::Result<()> {
                 None => Vec::new(),
             };
 
+            let reporter_specs = parse_reporters(&reporters)?;
+
+            let workspace_name = Workspace::open(&ws_root)
+                .map(|ws| ws.manifest.name)
+                .unwrap_or_else(|_| ws_root.display().to_string());
+            let started = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_default();
+            let mut iterations: Vec<IterationReport> = Vec::new();
+
             let exit_failed = if rows.is_empty() {
-                let report = run_command(&ws_root, &target, env, bail, std::collections::HashMap::new())?;
+                let report = run_command(
+                    &ws_root,
+                    &target,
+                    env,
+                    bail,
+                    std::collections::HashMap::new(),
+                )?;
                 print_report(&report);
-                report.failed() > 0
+                let failed = report.failed() > 0;
+                iterations.push(IterationReport { index: 0, report });
+                failed
             } else {
                 let total = rows.len();
                 let mut any_failed = false;
@@ -105,13 +132,21 @@ fn main() -> anyhow::Result<()> {
                     print_report(&report);
                     if report.failed() > 0 {
                         any_failed = true;
-                        if bail {
-                            break;
-                        }
+                    }
+                    iterations.push(IterationReport { index: i, report });
+                    if any_failed && bail {
+                        break;
                     }
                 }
                 any_failed
             };
+
+            let aggregate = RunReportAggregate {
+                workspace_name,
+                started_at_unix_ms: started,
+                iterations,
+            };
+            emit_reporters(&aggregate, &reporter_specs)?;
 
             if exit_failed {
                 std::process::exit(1);
@@ -127,6 +162,60 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+struct ReporterSpec {
+    format: ReporterFormat,
+    /// `None` means stdout.
+    output: Option<PathBuf>,
+}
+
+fn parse_reporters(values: &[String]) -> anyhow::Result<Vec<ReporterSpec>> {
+    let mut out = Vec::with_capacity(values.len());
+    for raw in values {
+        let (name, path) = match raw.split_once('=') {
+            Some((n, p)) => (n.trim(), Some(PathBuf::from(p.trim()))),
+            None => (raw.trim(), None),
+        };
+        let format = ReporterFormat::parse(name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "unknown reporter `{name}` — expected one of: json, junit, html",
+            )
+        })?;
+        out.push(ReporterSpec {
+            format,
+            output: path,
+        });
+    }
+    Ok(out)
+}
+
+fn emit_reporters(
+    agg: &RunReportAggregate,
+    specs: &[ReporterSpec],
+) -> anyhow::Result<()> {
+    for spec in specs {
+        let payload = spec.format.render(agg);
+        match &spec.output {
+            None => {
+                // Separate from the console summary with a blank line.
+                println!();
+                print!("{payload}");
+            }
+            Some(path) => {
+                if let Some(parent) = path.parent() {
+                    if !parent.as_os_str().is_empty() {
+                        std::fs::create_dir_all(parent).map_err(|e| {
+                            anyhow::anyhow!("create {}: {e}", parent.display())
+                        })?;
+                    }
+                }
+                std::fs::write(path, payload)
+                    .map_err(|e| anyhow::anyhow!("write {}: {e}", path.display()))?;
+            }
+        }
+    }
     Ok(())
 }
 
