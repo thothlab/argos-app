@@ -23,7 +23,7 @@ COPY --from=builder /build/target/release/argos-web /usr/local/bin/argos-web
 ENV ARGOS_BIND=0.0.0.0:8743 \
     ARGOS_DATA_DIR=/var/lib/argos-web \
     ARGOS_DOCS_DIR=/srv/argos-docs \
-    ARGOS_DOWNLOADS_BASE=https://github.com/argos-app/argos/releases/latest/download \
+    ARGOS_DOWNLOADS_BASE=https://github.com/thothlab/argos-app/releases/latest/download \
     RUST_LOG=argos_web=info,tower_http=info
 EXPOSE 8743
 # Runs as root inside the container so it can create $ARGOS_DATA_DIR

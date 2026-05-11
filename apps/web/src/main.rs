@@ -91,7 +91,7 @@ impl Config {
             .unwrap_or_else(|_| "/srv/argos-docs".to_string())
             .into();
         let downloads_base = env::var("ARGOS_DOWNLOADS_BASE")
-            .unwrap_or_else(|_| "https://github.com/argos-app/argos/releases/latest/download".to_string());
+            .unwrap_or_else(|_| "https://github.com/thothlab/argos-app/releases/latest/download".to_string());
         Ok(Self {
             bind,
             data_dir,

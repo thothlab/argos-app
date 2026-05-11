@@ -97,7 +97,7 @@ All via environment variables (see `docker-compose.yml`):
 | `ARGOS_BIND`            | `0.0.0.0:8743` (in container), `127.0.0.1:8743` (local)  | Listen address.                                            |
 | `ARGOS_DATA_DIR`        | `/var/lib/argos-web`                                     | Where crash reports + manifest.json live.                  |
 | `ARGOS_DOCS_DIR`        | `/srv/argos-docs`                                        | Read-only docs site export.                                |
-| `ARGOS_DOWNLOADS_BASE`  | `https://github.com/argos-app/argos/releases/latest/download` | Prefix for `/download/{target}` 302s.                |
+| `ARGOS_DOWNLOADS_BASE`  | `https://github.com/thothlab/argos-app/releases/latest/download` | Prefix for `/download/{target}` 302s.                |
 | `RUST_LOG`              | `argos_web=info,tower_http=info`                         | tracing filter.                                            |
 
 ## Persistence

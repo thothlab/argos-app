@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           ARGOS_VERSION="${ARGOS_VERSION:-latest}"
           curl -fsSL \
-            "https://github.com/argos-app/argos/releases/${ARGOS_VERSION}/download/argos-x86_64-linux.tar.gz" \
+            "https://github.com/thothlab/argos-app/releases/${ARGOS_VERSION}/download/argos-x86_64-linux.tar.gz" \
             | tar -xz
           chmod +x ./argos
           ./argos --help | head -1

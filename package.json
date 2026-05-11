@@ -7,7 +7,7 @@
   "homepage": "https://argos.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/argos-app/argos"
+    "url": "https://github.com/thothlab/argos-app"
   },
   "scripts": {
     "dev": "pnpm --filter @argos/ui dev",

@@ -14,10 +14,10 @@ export default defineConfig({
         'Fast, git-native API client. REST / GraphQL / WebSocket, scripting, CLI runner, OpenAPI / Postman / Insomnia / Bruno import.',
       logo: { src: './public/logo-mark.svg', replacesTitle: false },
       social: {
-        github: 'https://github.com/argos-app/argos',
+        github: 'https://github.com/thothlab/argos-app',
       },
       editLink: {
-        baseUrl: 'https://github.com/argos-app/argos/edit/main/apps/docs/',
+        baseUrl: 'https://github.com/thothlab/argos-app/edit/main/apps/docs/',
       },
       lastUpdated: true,
       tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },

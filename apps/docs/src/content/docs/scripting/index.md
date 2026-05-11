@@ -43,7 +43,7 @@ of the run (per-run, not persisted to disk).
 **Network access from scripts is intentionally absent.** If you need to
 refresh a token, generate it outside Argos and pass it through the CI
 env, or write a real pre-request flow in the [chained-request runner
-(E14, planned)](https://github.com/argos-app/argos/blob/main/docs/09_implementation_plan.md).
+(E14, planned)](https://github.com/thothlab/argos-app/blob/main/docs/09_implementation_plan.md).
 
 ## Postman compatibility
 

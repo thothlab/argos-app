@@ -13,7 +13,7 @@ argos:
     ARGOS_VERSION: latest
   before_script:
     - apt-get update -qq && apt-get install -yqq --no-install-recommends curl ca-certificates
-    - curl -fsSL "https://github.com/argos-app/argos/releases/${ARGOS_VERSION}/download/argos-x86_64-linux.tar.gz" | tar -xz
+    - curl -fsSL "https://github.com/thothlab/argos-app/releases/${ARGOS_VERSION}/download/argos-x86_64-linux.tar.gz" | tar -xz
     - chmod +x ./argos
     - ./argos --help | head -1
   script:

@@ -28,7 +28,7 @@ jobs:
       - name: Install argos
         run: |
           curl -fsSL \
-            "https://github.com/argos-app/argos/releases/latest/download/argos-x86_64-linux.tar.gz" \
+            "https://github.com/thothlab/argos-app/releases/latest/download/argos-x86_64-linux.tar.gz" \
             | tar -xz
           chmod +x ./argos
 
@@ -78,7 +78,7 @@ argos:
   image: ubuntu:24.04
   before_script:
     - apt-get update -qq && apt-get install -yqq --no-install-recommends curl ca-certificates
-    - curl -fsSL "https://github.com/argos-app/argos/releases/latest/download/argos-x86_64-linux.tar.gz" | tar -xz
+    - curl -fsSL "https://github.com/thothlab/argos-app/releases/latest/download/argos-x86_64-linux.tar.gz" | tar -xz
     - chmod +x ./argos
   script:
     - ./argos run ./argos-workspace/collections
@@ -125,4 +125,4 @@ run.
   each iteration becomes a nested `<testsuite>`, surfaced in CI panels
   as a separate section.
 
-Ready-to-copy workflow files also live in [`examples/ci/`](https://github.com/argos-app/argos/tree/main/examples/ci) in the repo.
+Ready-to-copy workflow files also live in [`examples/ci/`](https://github.com/thothlab/argos-app/tree/main/examples/ci) in the repo.

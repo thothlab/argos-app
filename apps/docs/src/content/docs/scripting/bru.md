@@ -122,5 +122,5 @@ one failure doesn't shadow later tests.
 - **Long-running timers.** Sandbox aborts after a hard timeout (~2s).
 
 If you reach for one of these and hit a wall, the [chained-request
-runner (E14)](https://github.com/argos-app/argos/blob/main/docs/09_implementation_plan.md)
+runner (E14)](https://github.com/thothlab/argos-app/blob/main/docs/09_implementation_plan.md)
 is the planned escape hatch.

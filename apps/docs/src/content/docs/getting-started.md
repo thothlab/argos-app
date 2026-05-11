@@ -9,7 +9,7 @@ in CI without exporting anything.
 
 ## Install the desktop app
 
-Pre-built bundles are attached to every [GitHub release](https://github.com/argos-app/argos/releases).
+Pre-built bundles are attached to every [GitHub release](https://github.com/thothlab/argos-app/releases).
 
 - **macOS:** `Argos-<version>.dmg` (Apple Silicon and Intel).
 - **Windows:** `Argos-<version>-setup.exe`.
@@ -24,7 +24,7 @@ The CLI is a static binary — drop it on the runner before invoking it:
 
 ```sh
 curl -fsSL \
-  "https://github.com/argos-app/argos/releases/latest/download/argos-x86_64-linux.tar.gz" \
+  "https://github.com/thothlab/argos-app/releases/latest/download/argos-x86_64-linux.tar.gz" \
   | tar -xz
 chmod +x ./argos
 ./argos --help
