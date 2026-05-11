@@ -61,3 +61,6 @@ coverage/
 
 # Claude Code runtime files
 .claude/
+/apps/web/latest.json
+/tmp/argos-*
+apps/web/latest.json
