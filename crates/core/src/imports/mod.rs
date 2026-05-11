@@ -11,6 +11,7 @@ use crate::format::request::RequestDraft;
 
 pub mod bruno;
 pub mod insomnia;
+pub mod openapi;
 pub mod postman;
 
 /// Result of importing a single source file.
