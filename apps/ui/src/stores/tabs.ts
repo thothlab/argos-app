@@ -17,6 +17,8 @@ import { nanoid } from 'nanoid';
 import { dropTabState, getRequest, initTabState, patchRequest, type DraftRequest } from './request';
 import { clearRuns, hydrateRuns } from './runs';
 import { workspace } from './workspace';
+import { dropWsState } from './ws';
+import { wsClose } from '../lib/api';
 import type { HttpMethod, HttpRequest } from '../types/http';
 import type { BodyDraft, ProtocolTag, RequestDraft, RestRequest } from '../types/workspace';
 
@@ -74,10 +76,18 @@ export function closeTab(id: string): void {
   const idx = list.findIndex((t) => t.id === id);
   if (idx < 0) return;
 
+  const tab = list[idx];
   const next = list.filter((t) => t.id !== id);
   setTabs(next);
   dropTabState(id);
   clearRuns(id);
+
+  // If the tab held a live WebSocket connection, ask the backend to
+  // close it. Best-effort — the registry tolerates an unknown id.
+  if (tab?.protocol === 'websocket') {
+    void wsClose(id).catch(() => undefined);
+    dropWsState(id);
+  }
 
   if (activeTabId() === id) {
     const replacement = next[idx] ?? next[idx - 1] ?? null;
