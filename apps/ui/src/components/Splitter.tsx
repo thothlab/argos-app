@@ -7,7 +7,7 @@
  * to overlap its own controls (the URL bar / status row).
  */
 
-import { createSignal, type JSX } from 'solid-js';
+import { children, createSignal, type JSX } from 'solid-js';
 
 import { loadJSON, saveJSON } from '../lib/persist';
 
@@ -31,6 +31,14 @@ function setSplitPct(pct: number): void {
 
 export default function Splitter(props: SplitterProps) {
   let containerRef: HTMLDivElement | undefined;
+
+  // Materialise the panes ONCE and reuse — without this, `{props.left()}`
+  // inside the JSX below is called inside a reactive scope on every
+  // render, which un-/re-mounts <RequestEditor>. The URL input loses
+  // its DOM node on each keystroke, focus jumps, half the characters
+  // get eaten.
+  const leftEl = children(() => props.left());
+  const rightEl = children(() => props.right());
 
   function onPointerDown(e: PointerEvent) {
     if (!containerRef) return;
@@ -59,7 +67,7 @@ export default function Splitter(props: SplitterProps) {
         class="flex h-full overflow-hidden"
         style={{ width: `${splitPct()}%`, 'min-width': `${MIN_PANE_PX}px` }}
       >
-        {props.left()}
+        {leftEl()}
       </div>
       <div
         role="separator"
@@ -74,7 +82,7 @@ export default function Splitter(props: SplitterProps) {
         class="flex h-full flex-1 overflow-hidden"
         style={{ 'min-width': `${MIN_PANE_PX}px` }}
       >
-        {props.right()}
+        {rightEl()}
       </div>
     </div>
   );
