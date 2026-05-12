@@ -44,8 +44,8 @@ export default function RequestEditor() {
     const id = tabId();
     return id ? getRequest(id) : null;
   };
-  const headerCount = () => draft()?.headers.filter((h) => h.enabled && h.name).length ?? 0;
-  const queryCount = () => draft()?.query.filter((q) => q.enabled && q.name).length ?? 0;
+  const headerCount = () => (draft()?.headers ?? []).filter((h) => h.enabled && h.name).length;
+  const queryCount = () => (draft()?.query ?? []).filter((q) => q.enabled && q.name).length;
   const hasBody = () => {
     const d = draft();
     return d ? d.bodyKind !== 'none' && d.bodyText.length > 0 : false;

@@ -198,11 +198,23 @@ export function openOrFocusTabForRequest(path: string, draft: RequestDraft): voi
     r.preRequest = draft.scripts?.pre_request ?? '';
     r.tests = draft.scripts?.tests ?? '';
     r.auth = authToDraft(draft.auth);
-    r.headers = draft.headers.map((h) => ({ name: h.name, value: h.value, enabled: h.enabled }));
+    // `headers` / `query` are serde `#[skip_serializing_if = "Vec::is_empty"]`
+    // on the Rust side — an empty Vec → field omitted from JSON →
+    // `undefined` on the wire. Coerce to [] to keep .map / .filter
+    // alive in the UI.
+    r.headers = (draft.headers ?? []).map((h) => ({
+      name: h.name,
+      value: h.value,
+      enabled: h.enabled,
+    }));
 
     if (draft.type === 'rest') {
       r.method = draft.method;
-      r.query = draft.query.map((q) => ({ name: q.name, value: q.value, enabled: q.enabled }));
+      r.query = (draft.query ?? []).map((q) => ({
+        name: q.name,
+        value: q.value,
+        enabled: q.enabled,
+      }));
       if (!draft.body) {
         r.bodyKind = 'none';
         r.bodyText = '';
