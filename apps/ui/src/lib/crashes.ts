@@ -24,6 +24,7 @@ import {
 import { loadJSON, saveJSON } from './persist';
 import { isTauri } from './tauri';
 import { notify, notifyError } from './toast';
+import { pushErrorLog } from '../stores/error-log';
 
 const CONSENT_KEY = 'argos:crash:consent';
 const SESSION_KEY = 'argos:crash:session_id';
@@ -153,6 +154,7 @@ export function installCrashCapture(): void {
     const loc = event.filename
       ? `${event.filename}:${event.lineno ?? '?'}:${event.colno ?? '?'}`
       : 'renderer:unknown';
+    pushErrorLog({ source: 'renderer:onerror', message: msg, location: loc });
     void crashRecord(msg, loc).catch(() => undefined);
   });
 
@@ -170,6 +172,7 @@ export function installCrashCapture(): void {
       const frame = reason.stack.split('\n').find((l) => l.trim().startsWith('at '));
       if (frame) loc = `renderer:${frame.trim().replace(/^at\s+/, '')}`;
     }
+    pushErrorLog({ source: 'renderer:unhandledrejection', message: msg, location: loc });
     void crashRecord(msg, loc).catch(() => undefined);
   });
 }

@@ -12,9 +12,11 @@ import { X } from 'lucide-solid';
 
 import { loadJSON, saveJSON } from '../lib/persist';
 import { toggleDock } from '../stores/layout';
+import { errorLogEntries } from '../stores/error-log';
 import { runsFor } from '../stores/runs';
 import { activeTabId } from '../stores/tabs';
 
+import ErrorLogView from './ErrorLogView';
 import RunHistoryView from './RunHistoryView';
 
 type DockTab = 'runs' | 'logs' | 'console';
@@ -65,7 +67,7 @@ export default function LowerDock() {
 
   const TABS: Array<{ id: DockTab; label: string; badge?: () => number; disabled?: boolean }> = [
     { id: 'runs', label: 'Runs', badge: runCount },
-    { id: 'logs', label: 'Logs', disabled: true },
+    { id: 'logs', label: 'Logs', badge: () => errorLogEntries().length },
     { id: 'console', label: 'Console', disabled: true },
   ];
 
@@ -129,7 +131,7 @@ export default function LowerDock() {
             <RunHistoryView />
           </Match>
           <Match when={activeDockTab() === 'logs'}>
-            <Placeholder>Application log output appears here. Wired up in E4.</Placeholder>
+            <ErrorLogView />
           </Match>
           <Match when={activeDockTab() === 'console'}>
             <Placeholder>console.log() / bru.log() output appears here. Wired up in E4.</Placeholder>

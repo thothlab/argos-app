@@ -109,6 +109,12 @@ export function togglePin(id: string): void {
 }
 
 export function markDirty(id: string, dirty: boolean): void {
+  // Idempotent — autosave's per-keystroke effect calls this on every
+  // edit, and a no-op setTabs still fires the tabs() signal, which
+  // re-renders the protocol-routing Switch in App.tsx and unmounts
+  // <RequestEditor>. Focus thief. Skip when already in target state.
+  const cur = tabs().find((t) => t.id === id);
+  if (!cur || cur.dirty === dirty) return;
   setTabs((list) => list.map((t) => (t.id === id ? { ...t, dirty } : t)));
 }
 
