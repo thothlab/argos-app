@@ -4,6 +4,7 @@ import AppShell from './components/AppShell';
 import CrashReportConsentModal from './components/CrashReportConsentModal';
 import DropImportOverlay from './components/DropImportOverlay';
 import GraphqlEditor from './components/GraphqlEditor';
+import PromptModal from './components/PromptModal';
 import ProtocolPlaceholder from './components/ProtocolPlaceholder';
 import RequestEditor from './components/RequestEditor';
 import ResponsePane from './components/ResponsePane';
@@ -75,6 +76,7 @@ export default function App() {
   return (
     <>
       <Toaster />
+      <PromptModal />
       <CrashReportConsentModal />
       <DropImportOverlay />
       <Show when={workspace()} fallback={<WelcomeScreen />}>

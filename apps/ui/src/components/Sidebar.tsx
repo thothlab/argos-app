@@ -36,6 +36,7 @@ import {
 } from '../lib/api';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { activeTab, openOrFocusTabForRequest } from '../stores/tabs';
+import { promptText } from '../lib/prompt';
 import { notifyError } from '../lib/toast';
 import type { TreeNode } from '../types/workspace';
 
@@ -64,7 +65,7 @@ export default function Sidebar() {
                   onClick={async () => {
                     const ws = workspace();
                     if (!ws) return;
-                    const name = window.prompt('Folder name:');
+                    const name = await promptText({ title: 'New folder', placeholder: 'name', submitLabel: 'Create' });
                     if (!name) return;
                     try {
                       await treeCreateFolder(collectionsRoot(ws), name);
@@ -83,7 +84,7 @@ export default function Sidebar() {
                   onClick={async () => {
                     const ws = workspace();
                     if (!ws) return;
-                    const name = window.prompt('Request name:');
+                    const name = await promptText({ title: 'New request', placeholder: 'name', submitLabel: 'Create' });
                     if (!name) return;
                     try {
                       const path = await treeCreateRequest(collectionsRoot(ws), name);
@@ -220,7 +221,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
               icon={<FilePlus size={13} />}
               label="New REST request"
               onSelect={async () => {
-                const name = window.prompt('Request name:');
+                const name = await promptText({ title: 'New request', placeholder: 'name', submitLabel: 'Create' });
                 if (!name) return;
                 try {
                   const path = await treeCreateRequest(props.node.path, name);
@@ -240,7 +241,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
               icon={<FilePlus size={13} />}
               label="New GraphQL request"
               onSelect={async () => {
-                const name = window.prompt('Request name:');
+                const name = await promptText({ title: 'New request', placeholder: 'name', submitLabel: 'Create' });
                 if (!name) return;
                 try {
                   const path = await treeCreateRequest(props.node.path, name, null, 'graphql');
@@ -260,7 +261,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
               icon={<FilePlus size={13} />}
               label="New WebSocket connection"
               onSelect={async () => {
-                const name = window.prompt('Request name:');
+                const name = await promptText({ title: 'New request', placeholder: 'name', submitLabel: 'Create' });
                 if (!name) return;
                 try {
                   const path = await treeCreateRequest(props.node.path, name, null, 'websocket');
@@ -280,7 +281,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
               icon={<FolderPlus size={13} />}
               label="New folder"
               onSelect={async () => {
-                const name = window.prompt('Folder name:');
+                const name = await promptText({ title: 'New folder', placeholder: 'name', submitLabel: 'Create' });
                 if (!name) return;
                 try {
                   await treeCreateFolder(props.node.path, name);
@@ -296,7 +297,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
               icon={<Pencil size={13} />}
               label="Rename"
               onSelect={async () => {
-                const next = window.prompt('Folder name:', props.node.name);
+                const next = await promptText({ title: 'Rename folder', defaultValue: props.node.name, submitLabel: 'Rename' });
                 if (!next || next === props.node.name) return;
                 try {
                   await treeRename(props.node.path, next);
@@ -398,7 +399,7 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
               icon={<Pencil size={13} />}
               label="Rename"
               onSelect={async () => {
-                const next = window.prompt('Request name:', props.node.draft.name);
+                const next = await promptText({ title: 'Rename request', defaultValue: props.node.draft.name, submitLabel: 'Rename' });
                 if (!next || next === props.node.draft.name) return;
                 try {
                   await treeRename(props.node.path, next);

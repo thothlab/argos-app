@@ -20,6 +20,7 @@ import {
   environmentSave,
   workspaceReload,
 } from '../lib/api';
+import { promptText } from '../lib/prompt';
 import { setActiveEnvName, activeEnvName } from '../stores/active-env';
 import { setWorkspace, workspace } from '../stores/workspace';
 import type { EnvVar, Environment, EnvironmentEntry } from '../types/workspace';
@@ -95,7 +96,12 @@ export default function EnvironmentEditor(props: {
   async function createEnv() {
     const ws = workspace();
     if (!ws) return;
-    const name = prompt('Environment name', 'staging');
+    const name = await promptText({
+      title: 'New environment',
+      placeholder: 'staging',
+      defaultValue: 'staging',
+      submitLabel: 'Create',
+    });
     if (!name) return;
     setBusy(true);
     setErr(null);
