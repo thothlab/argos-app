@@ -1,4 +1,4 @@
-import { Show } from 'solid-js';
+import { Match, Show, Switch } from 'solid-js';
 
 import AppShell from './components/AppShell';
 import CrashReportConsentModal from './components/CrashReportConsentModal';
@@ -57,19 +57,21 @@ export default function App() {
         </div>
       }
     >
-      {(() => {
-        const protocol = activeTab()?.protocol ?? 'rest';
-        if (protocol === 'rest') {
-          return <Splitter left={() => <RequestEditor />} right={() => <ResponsePane />} />;
-        }
-        if (protocol === 'graphql') {
-          return <Splitter left={() => <GraphqlEditor />} right={() => <ResponsePane />} />;
-        }
-        if (protocol === 'websocket') {
-          return <WebsocketEditor />;
-        }
-        return <ProtocolPlaceholder protocol={protocol} />;
-      })()}
+      {/* Switch/Match keeps each branch mounted within its lifetime —
+          an IIFE here re-ran on every tabs() signal change (e.g. when
+          autosave flipped a tab's `dirty` bit) and the inner
+          RequestEditor was unmounted mid-typing. */}
+      <Switch fallback={<ProtocolPlaceholder protocol={activeTab()?.protocol ?? 'rest'} />}>
+        <Match when={(activeTab()?.protocol ?? 'rest') === 'rest'}>
+          <Splitter left={() => <RequestEditor />} right={() => <ResponsePane />} />
+        </Match>
+        <Match when={activeTab()?.protocol === 'graphql'}>
+          <Splitter left={() => <GraphqlEditor />} right={() => <ResponsePane />} />
+        </Match>
+        <Match when={activeTab()?.protocol === 'websocket'}>
+          <WebsocketEditor />
+        </Match>
+      </Switch>
     </Show>
   );
 
