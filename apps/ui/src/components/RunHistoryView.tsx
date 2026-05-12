@@ -6,14 +6,15 @@
  * when new runs are recorded.
  */
 
-import { Download } from 'lucide-solid';
+import { Download, Trash2 } from 'lucide-solid';
 import { For, Show } from 'solid-js';
 
 import { runExportHar } from '../lib/api';
 import { notify, notifyError } from '../lib/toast';
 import { setResponse } from '../stores/request';
-import { runsFor, type Run } from '../stores/runs';
-import { activeTabId } from '../stores/tabs';
+import { clearRuns, runsFor, type Run } from '../stores/runs';
+import { activeTab, activeTabId } from '../stores/tabs';
+import { workspace } from '../stores/workspace';
 import type { HttpMethod } from '../types/http';
 
 const METHOD_VAR: Record<HttpMethod, string> = {
@@ -38,11 +39,43 @@ export default function RunHistoryView() {
     setResponse(run.tabId, { status: 'ok', response: run.response });
   }
 
+  function clearForActiveTab(): void {
+    const id = activeTabId();
+    if (!id) return;
+    const count = runsFor(id).length;
+    if (count === 0) return;
+    const tab = activeTab();
+    const ws = workspace();
+    // If the tab is backed by a file, also drop the persisted runs
+    // file on disk so the next launch starts fresh.
+    const persist = ws && tab?.path
+      ? { workspaceRoot: ws.root, requestPath: tab.path }
+      : undefined;
+    clearRuns(id, persist);
+    notify.info(`Cleared ${count} run${count === 1 ? '' : 's'} from history.`);
+  }
+
   return (
+    <div class="flex h-full flex-col">
+      <div class="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5 text-[11px] text-fg-secondary">
+        <span>
+          {list().length} run{list().length === 1 ? '' : 's'} for this tab
+        </span>
+        <button
+          type="button"
+          class="flex items-center gap-1 rounded px-2 py-1 hover:bg-bg-secondary hover:text-fg-primary disabled:opacity-30"
+          disabled={list().length === 0}
+          onClick={clearForActiveTab}
+          title="Clear in-memory list and the on-disk runs file for this request"
+        >
+          <Trash2 size={11} />
+          Clear
+        </button>
+      </div>
     <Show
       when={list().length > 0}
       fallback={
-        <div class="flex h-full items-center justify-center px-6 text-center">
+        <div class="flex flex-1 items-center justify-center px-6 text-center">
           <p class="font-mono text-[12px] text-fg-secondary">
             No runs yet. Send a request to populate the history.
           </p>
@@ -106,6 +139,7 @@ export default function RunHistoryView() {
         </tbody>
       </table>
     </Show>
+    </div>
   );
 }
 
