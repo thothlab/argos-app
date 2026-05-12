@@ -64,7 +64,9 @@ function mergeHeaders(own: RowEntry[], ancestors: Folder[]): RowEntry[] {
   const map = new Map<string, RowEntry>();
 
   for (const folder of ancestors) {
-    for (const h of folder.headers) {
+    // `folder.headers` may be omitted on the wire (serde skips empty
+    // Vecs) — coalesce to [] defensively.
+    for (const h of folder.headers ?? []) {
       if (!h.name) continue;
       map.set(h.name.toLowerCase(), {
         name: h.name,
@@ -74,7 +76,7 @@ function mergeHeaders(own: RowEntry[], ancestors: Folder[]): RowEntry[] {
     }
   }
 
-  for (const h of own) {
+  for (const h of own ?? []) {
     if (!h.name) continue;
     map.set(h.name.toLowerCase(), { ...h });
   }
