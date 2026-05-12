@@ -10,15 +10,15 @@ import { promptState, resolvePrompt } from '../lib/prompt';
 
 export default function PromptModal() {
   const [value, setValue] = createSignal('');
-  let inputEl: HTMLInputElement | undefined;
 
-  // Reset value + focus when a fresh prompt opens.
+  // Reset value when a fresh prompt opens. Focus is handled via the
+  // input's ref callback (fires when the element mounts) — that's
+  // more reliable than queueMicrotask, which can race the Show
+  // block's content rendering.
   createEffect(() => {
     const s = promptState();
     if (s.open) {
       setValue(s.opts.defaultValue ?? '');
-      // Defer focus to next tick so the input is in the DOM.
-      queueMicrotask(() => inputEl?.focus());
     }
   });
 
@@ -70,7 +70,15 @@ export default function PromptModal() {
           </header>
 
           <input
-            ref={inputEl}
+            ref={(el) => {
+              // Ref callbacks fire after the element is in the DOM.
+              // Focus + select-all so the user can immediately type
+              // over a default value (e.g. for Rename).
+              requestAnimationFrame(() => {
+                el?.focus();
+                el?.select();
+              });
+            }}
             type="text"
             spellcheck={false}
             autocomplete="off"
