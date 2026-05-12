@@ -29,7 +29,15 @@ import {
 
 import HexViewer from './HexViewer';
 
-const LARGE_BODY_BYTES = 200_000;
+// Above this we stop pretty-printing JSON (JSON.parse + stringify
+// on multi-MB strings stalls the renderer). Up to this size we
+// pretty; above, the response is shown verbatim. The previous 200 KB
+// threshold dropped the body entirely — too aggressive, killed
+// normal API responses.
+const PRETTY_JSON_BUDGET_BYTES = 2_000_000;
+// Hard cap for any text render. Above this we offer a "Save body"
+// CTA instead of pushing tens of MB into a <pre>.
+const HUGE_BODY_BYTES = 10_000_000;
 
 type BodyTab = 'body' | 'headers' | 'timing' | 'tests';
 
@@ -288,18 +296,16 @@ function BodyView(props: { response: HttpResponse }) {
   const ct = () => props.response.body.content_type;
   const isImage = () => (ct() ?? '').startsWith('image/');
   const isText = () => isTextContentType(ct());
-  const isLarge = () => props.response.body.size_bytes >= LARGE_BODY_BYTES;
+  const sizeBytes = () => props.response.body.size_bytes;
+  const isHuge = () => sizeBytes() >= HUGE_BODY_BYTES;
 
   return (
     <Switch>
       <Match when={isImage()}>
         <ImageView response={props.response} />
       </Match>
-      <Match when={isLarge() && isText()}>
-        <p class="p-4 font-mono text-[12px] text-fg-secondary">
-          Body is {formatBytes(props.response.body.size_bytes)} — text preview disabled until
-          streaming render lands. (Tracked under T1.4 follow-up.)
-        </p>
+      <Match when={isText() && isHuge()}>
+        <HugeBodyCta response={props.response} />
       </Match>
       <Match when={isText()}>
         <TextView response={props.response} />
@@ -314,8 +320,11 @@ function BodyView(props: { response: HttpResponse }) {
 function TextView(props: { response: HttpResponse }) {
   const text = createMemo(() => bytesToString(props.response.body.bytes));
   const ct = () => props.response.body.content_type;
+  // Skip pretty-print above the budget — JSON.parse on multi-MB strings
+  // can stall the WebView. The raw text still renders, just unindented.
   const pretty = createMemo(() => {
     if (!isJsonContentType(ct())) return null;
+    if (props.response.body.size_bytes >= PRETTY_JSON_BUDGET_BYTES) return null;
     try {
       return JSON.stringify(JSON.parse(text()), null, 2);
     } catch {
@@ -326,6 +335,53 @@ function TextView(props: { response: HttpResponse }) {
     <pre class="m-0 whitespace-pre-wrap break-all p-4 font-mono text-[12px] leading-relaxed text-fg-primary">
       {pretty() ?? text()}
     </pre>
+  );
+}
+
+function HugeBodyCta(props: { response: HttpResponse }) {
+  // Above 10 MB we don't push the text into the DOM — a multi-MB <pre>
+  // can lock the WebView for seconds on every reflow. Offer a save +
+  // copy fallback so the data still lands in the user's hands.
+  async function save() {
+    const { save: dialogSave } = await import('@tauri-apps/plugin-dialog');
+    const { writeFile } = await import('@tauri-apps/plugin-fs');
+    const ct = props.response.body.content_type ?? '';
+    const ext = ct.includes('json') ? 'json' : ct.includes('xml') ? 'xml' : 'txt';
+    const path = await dialogSave({
+      defaultPath: `argos-response.${ext}`,
+      filters: [{ name: 'Response body', extensions: [ext, 'txt'] }],
+    });
+    if (typeof path !== 'string') return;
+    await writeFile(path, new Uint8Array(props.response.body.bytes));
+  }
+  async function copy() {
+    const text = bytesToString(props.response.body.bytes);
+    await navigator.clipboard.writeText(text);
+  }
+  return (
+    <div class="flex flex-col items-start gap-3 p-4 font-mono text-[12px]">
+      <p>
+        Body is <strong>{formatBytes(props.response.body.size_bytes)}</strong> — that's
+        large enough that rendering it inline would freeze the window. The bytes are
+        captured; download or copy them to read in a real editor.
+      </p>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="rounded bg-primary px-3 py-1.5 text-primary-foreground hover:opacity-90"
+          onClick={() => void save()}
+        >
+          Save as file…
+        </button>
+        <button
+          type="button"
+          class="rounded border border-border px-3 py-1.5 hover:bg-bg-secondary"
+          onClick={() => void copy()}
+        >
+          Copy to clipboard
+        </button>
+      </div>
+    </div>
   );
 }
 
