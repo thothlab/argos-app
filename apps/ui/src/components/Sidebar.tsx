@@ -32,10 +32,11 @@ import {
   treeDelete,
   treeMove,
   treeRename,
+  treeReorder,
   workspaceReload,
 } from '../lib/api';
 import { setWorkspace, workspace } from '../stores/workspace';
-import { activeTab, openOrFocusTabForRequest } from '../stores/tabs';
+import { activeTab, openOrFocusTabForRequest, setTabPath, setTabTitle, tabs } from '../stores/tabs';
 import { promptText } from '../lib/prompt';
 import { notifyError } from '../lib/toast';
 import type { TreeNode } from '../types/workspace';
@@ -51,7 +52,26 @@ export default function Sidebar() {
           </div>
         }
       >
-        {(ws) => (
+        {(ws) => {
+          const [rootDragOver, setRootDragOver] = createSignal(false);
+          async function onRootDrop(e: DragEvent) {
+            e.preventDefault();
+            setRootDragOver(false);
+            const src = e.dataTransfer?.getData('text/argos-node-path');
+            if (!src) return;
+            const dest = collectionsRoot(ws());
+            // Already at root → noop. The backend would also catch this
+            // but the explicit guard avoids a useless reload.
+            const parent = src.replace(/[/][^/]+$/, '');
+            if (parent === dest) return;
+            try {
+              await treeMove(src, dest);
+              await reloadWorkspace();
+            } catch (err) {
+              notifyError('Move failed', err);
+            }
+          }
+          return (
           <>
             <div class="flex items-center justify-between px-3 py-2 text-fg-secondary">
               <span class="font-mono text-[10px] tracking-widest" title={ws().root}>
@@ -105,7 +125,22 @@ export default function Sidebar() {
               </div>
             </div>
 
-            <ul class="flex-1 overflow-auto scrollbar-thin px-1 pb-2 text-[13px]">
+            <ul
+              class="flex-1 overflow-auto scrollbar-thin px-1 pb-2 text-[13px]"
+              classList={{ 'bg-bg-secondary/30': rootDragOver() }}
+              onDragOver={(e) => {
+                if (!e.dataTransfer) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                setRootDragOver(true);
+              }}
+              onDragLeave={(e) => {
+                // Only clear when the pointer actually leaves the list
+                // (not just crosses into a child).
+                if (e.currentTarget === e.target) setRootDragOver(false);
+              }}
+              onDrop={onRootDrop}
+            >
               {(() => {
                 const root = ws().tree;
                 const children = root.kind === 'folder' ? root.children : [];
@@ -128,7 +163,8 @@ export default function Sidebar() {
               <span title={ws().root}>{lastSegment(ws().root)}</span> · workspace
             </div>
           </>
-        )}
+          );
+        }}
       </Show>
     </div>
   );
@@ -155,7 +191,7 @@ function NodeView(props: { node: TreeNode; depth: number }) {
 
 function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: number }) {
   const [open, setOpen] = createSignal(props.depth < 1);
-  const [dragOver, setDragOver] = createSignal(false);
+  const [dropMode, setDropMode] = createSignal<DropMode | null>(null);
   const indent = () => `${0.5 + props.depth * 0.75}rem`;
 
   function onDragStart(e: DragEvent) {
@@ -166,42 +202,46 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
   function onDragOver(e: DragEvent) {
     if (!e.dataTransfer) return;
     e.preventDefault();
+    // Stop the event from bubbling to the root <ul>'s dragover so that
+    // hovering a folder doesn't also light up the root drop-zone.
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    setDragOver(true);
+    setDropMode(dropZoneFor(e, true));
   }
   function onDragLeave() {
-    setDragOver(false);
+    setDropMode(null);
   }
   async function onDrop(e: DragEvent) {
     e.preventDefault();
-    setDragOver(false);
+    e.stopPropagation();
+    const mode = dropMode() ?? dropZoneFor(e, true);
+    setDropMode(null);
     const src = e.dataTransfer?.getData('text/argos-node-path');
-    if (!src || src === props.node.path) return;
-    try {
-      await treeMove(src, props.node.path);
-      await reloadWorkspace();
-    } catch (err) {
-      notifyError('Move failed', err);
-    }
+    if (!src) return;
+    await handleDrop(src, props.node.path, mode);
   }
 
   return (
     <li>
       <ContextMenu>
-        <ContextMenu.Trigger
-          as="div"
-          class="contents"
-          draggable={true}
-          onDragStart={onDragStart}
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
-          onDrop={onDrop}
-        >
+        <ContextMenu.Trigger as="div" class="contents">
+          <div class="relative">
+            <Show when={dropMode() === 'before'}>
+              <div class="pointer-events-none absolute inset-x-1 top-0 z-10 h-0.5 bg-primary" />
+            </Show>
+            <Show when={dropMode() === 'after'}>
+              <div class="pointer-events-none absolute inset-x-1 bottom-0 z-10 h-0.5 bg-primary" />
+            </Show>
           <button
             type="button"
             class="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left hover:bg-bg-secondary"
-            classList={{ 'bg-bg-secondary': dragOver() }}
+            classList={{ 'bg-bg-secondary': dropMode() === 'into' }}
             style={{ 'padding-left': indent() }}
+            draggable={true}
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
             onClick={() => setOpen((v) => !v)}
           >
             <span class="flex h-3 w-3 shrink-0 items-center justify-center text-fg-secondary">
@@ -214,6 +254,7 @@ function FolderRow(props: { node: Extract<TreeNode, { kind: 'folder' }>; depth: 
             )}
             <span class="flex-1 truncate">{props.node.name}</span>
           </button>
+          </div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Content class="z-50 min-w-48 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
@@ -360,21 +401,44 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
     return '';
   };
 
+  const [dropMode, setDropMode] = createSignal<DropMode | null>(null);
+
   function onDragStart(e: DragEvent) {
     if (!e.dataTransfer) return;
     e.dataTransfer.setData('text/argos-node-path', props.node.path);
     e.dataTransfer.effectAllowed = 'move';
   }
+  function onDragOver(e: DragEvent) {
+    if (!e.dataTransfer) return;
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDropMode(dropZoneFor(e, false));
+  }
+  function onDragLeave() {
+    setDropMode(null);
+  }
+  async function onDrop(e: DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const mode = dropMode() ?? dropZoneFor(e, false);
+    setDropMode(null);
+    const src = e.dataTransfer?.getData('text/argos-node-path');
+    if (!src) return;
+    await handleDrop(src, props.node.path, mode);
+  }
 
   return (
     <li>
       <ContextMenu>
-        <ContextMenu.Trigger
-          as="div"
-          class="contents"
-          draggable={true}
-          onDragStart={onDragStart}
-        >
+        <ContextMenu.Trigger as="div" class="contents">
+          <div class="relative">
+            <Show when={dropMode() === 'before'}>
+              <div class="pointer-events-none absolute inset-x-1 top-0 z-10 h-0.5 bg-primary" />
+            </Show>
+            <Show when={dropMode() === 'after'}>
+              <div class="pointer-events-none absolute inset-x-1 bottom-0 z-10 h-0.5 bg-primary" />
+            </Show>
           <button
             type="button"
             class="group flex w-full items-center gap-2 rounded px-2 py-1 text-left"
@@ -384,6 +448,11 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
             }}
             style={{ 'padding-left': indent() }}
             title={props.node.path}
+            draggable={true}
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
             onClick={() => openOrFocusTabForRequest(props.node.path, props.node.draft)}
           >
             <FileText size={12} class="shrink-0 text-fg-secondary" />
@@ -392,6 +461,7 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
             </span>
             <span class="flex-1 truncate">{props.node.draft.name}</span>
           </button>
+          </div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal>
           <ContextMenu.Content class="z-50 min-w-48 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
@@ -401,8 +471,18 @@ function RequestRow(props: { node: Extract<TreeNode, { kind: 'request' }>; depth
               onSelect={async () => {
                 const next = await promptText({ title: 'Rename request', defaultValue: props.node.draft.name, submitLabel: 'Rename' });
                 if (!next || next === props.node.draft.name) return;
+                const oldPath = props.node.path;
                 try {
-                  await treeRename(props.node.path, next);
+                  const newPath = await treeRename(oldPath, next);
+                  // Any open tab bound to the old path now points at a
+                  // file that no longer exists — re-target it before the
+                  // user's next save writes to thin air.
+                  for (const t of tabs()) {
+                    if (t.path === oldPath) {
+                      setTabPath(t.id, newPath);
+                      setTabTitle(t.id, next);
+                    }
+                  }
                   await reloadWorkspace();
                 } catch (e) {
                   notifyError('Rename failed', e);
@@ -491,5 +571,100 @@ async function reloadWorkspace(): Promise<void> {
     setWorkspace(fresh);
   } catch {
     // Best-effort: file watcher will catch up shortly.
+  }
+}
+
+// ---- drag-n-drop helpers ------------------------------------------------
+
+type DropMode = 'into' | 'before' | 'after';
+
+/**
+ * Decide which third of a row the cursor sits in. Folder rows allow all
+ * three zones (top → before, middle → into, bottom → after); request rows
+ * only support before / after, so the middle hit-tests as the nearer edge.
+ */
+function dropZoneFor(e: DragEvent, allowInto: boolean): DropMode {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const y = e.clientY - rect.top;
+  if (allowInto) {
+    if (y < rect.height * 0.33) return 'before';
+    if (y > rect.height * 0.67) return 'after';
+    return 'into';
+  }
+  return y < rect.height * 0.5 ? 'before' : 'after';
+}
+
+function basename(p: string): string {
+  const m = p.match(/[^/]+$/);
+  return m ? m[0] : p;
+}
+
+function parentDir(p: string): string {
+  return p.replace(/[/][^/]+$/, '');
+}
+
+/** Find the folder node whose `.path` equals `dir`. */
+function findFolder(
+  node: TreeNode,
+  dir: string,
+): Extract<TreeNode, { kind: 'folder' }> | null {
+  if (node.kind === 'folder' && node.path === dir) return node;
+  if (node.kind !== 'folder') return null;
+  for (const child of node.children) {
+    const found = findFolder(child, dir);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Execute a drop. `mode === 'into'` does a plain `treeMove`; before/after
+ * reorder within the target row's parent folder, moving across folders
+ * first if needed, then writing the new `_order.argos.yaml`.
+ */
+async function handleDrop(src: string, targetPath: string, mode: DropMode): Promise<void> {
+  if (!src || src === targetPath) return;
+  const ws = workspace();
+  if (!ws) return;
+
+  try {
+    if (mode === 'into') {
+      // Caller guarantees targetPath is a folder when mode is 'into'.
+      if (parentDir(src) === targetPath) return; // already inside, no-op
+      await treeMove(src, targetPath);
+      await reloadWorkspace();
+      return;
+    }
+
+    // before / after: reorder within targetPath's parent.
+    const destParent = parentDir(targetPath);
+    const srcParent = parentDir(src);
+    const siblingsFolder = findFolder(ws.tree, destParent);
+    if (!siblingsFolder) return;
+
+    let srcName = basename(src);
+    if (srcParent !== destParent) {
+      const newPath = await treeMove(src, destParent);
+      srcName = basename(newPath);
+    }
+
+    const targetName = basename(targetPath);
+    // Take the current sibling basenames, drop the source if it was already
+    // in this folder, then re-insert it relative to the target.
+    const names = siblingsFolder.children
+      .map((n) => basename(n.path))
+      .filter((n) => n !== srcName);
+    const idx = names.indexOf(targetName);
+    if (idx === -1) {
+      await reloadWorkspace();
+      return;
+    }
+    const insertAt = mode === 'before' ? idx : idx + 1;
+    names.splice(insertAt, 0, srcName);
+
+    await treeReorder(destParent, names);
+    await reloadWorkspace();
+  } catch (err) {
+    notifyError('Move failed', err);
   }
 }

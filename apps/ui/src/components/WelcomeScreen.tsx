@@ -10,10 +10,10 @@
 
 import { createResource, For, Show } from 'solid-js';
 
-import { FilePlus, FolderOpen, Sparkles } from 'lucide-solid';
+import { BookOpen, ExternalLink, FilePlus, FolderOpen, Sparkles } from 'lucide-solid';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 
-import { workspaceCreate, workspaceListRecent, workspaceOpen } from '../lib/api';
+import { openUrl, workspaceCreate, workspaceListRecent, workspaceOpen } from '../lib/api';
 import { isTauri } from '../lib/tauri';
 import { notify, notifyError } from '../lib/toast';
 import { setWorkspace } from '../stores/workspace';
@@ -58,6 +58,20 @@ export default function WelcomeScreen() {
     } catch (e) {
       notifyError('Could not create workspace', e);
     }
+  }
+
+  async function openDocs() {
+    const url = 'https://argos.thothlab.tech/docs/getting-started/';
+    if (isTauri()) {
+      try {
+        await openUrl(url);
+        return;
+      } catch (e) {
+        notifyError('Could not open documentation', e);
+        return;
+      }
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   async function openRecent(entry: RecentEntry) {
@@ -127,6 +141,16 @@ export default function WelcomeScreen() {
           </ul>
         </section>
       </Show>
+
+      <button
+        type="button"
+        class="flex items-center gap-2 rounded-full border border-border bg-bg-card px-4 py-1.5 text-[12px] text-fg-secondary hover:border-primary hover:text-fg-primary"
+        onClick={openDocs}
+      >
+        <BookOpen size={13} />
+        <span>Read the docs</span>
+        <ExternalLink size={11} class="opacity-70" />
+      </button>
 
       <Show when={isTauri()}>
         <p class="max-w-md text-[12px] text-fg-secondary">

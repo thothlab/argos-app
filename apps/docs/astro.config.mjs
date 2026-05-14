@@ -3,10 +3,12 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  // Update when the docs are deployed under a sub-path (e.g.
-  // /docs on argos.app). Cloudflare Pages / Vercel apex serves at
-  // root, in which case `site` alone is enough.
-  site: 'https://argos.app/docs',
+  // The deployed home is argos.thothlab.tech with docs mounted under
+  // /docs. `base` prefixes every generated asset / link so CSS, JS,
+  // sitemap and internal navigation resolve correctly once served from
+  // the sub-path. `site` is used for canonical / sitemap absolute URLs.
+  site: 'https://argos.thothlab.tech',
+  base: '/docs',
   integrations: [
     starlight({
       title: 'Argos',
@@ -22,6 +24,9 @@ export default defineConfig({
       lastUpdated: true,
       tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
       customCss: ['./src/styles/argos.css'],
+      components: {
+        ThemeSelect: './src/components/ThemeToggle.astro',
+      },
       sidebar: [
         {
           label: 'Start here',

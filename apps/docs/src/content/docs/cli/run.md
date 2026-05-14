@@ -30,7 +30,7 @@ and load environments.
 | `--env <NAME>`                  | Activate an environment from `environments/`. `{{var}}` placeholders resolve against it. |
 | `--bail`                        | Stop on the first failing request. Without `--bail` the runner finishes the whole tree. |
 | `--iteration-data <FILE>`       | Data-driven runs. CSV or JSON; one full pass through `<PATH>` per row. |
-| `--reporter <FORMAT>[=<PATH>]`  | Emit a structured report. Repeatable. See [Reporters](/cli/reporters/). |
+| `--reporter <FORMAT>[=<PATH>]`  | Emit a structured report. Repeatable. See [Reporters](/docs/cli/reporters/). |
 | `--workspace <ROOT>`            | Workspace root override. Defaults to walking up from `<PATH>` looking for `argos.yaml`. |
 
 ## Examples

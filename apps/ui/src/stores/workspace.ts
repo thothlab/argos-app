@@ -17,7 +17,25 @@ const [workspace, setWorkspaceRaw] = createSignal<Workspace | null>(null);
 export { workspace };
 
 export function setWorkspace(ws: Workspace | null): void {
-  setWorkspaceRaw(ws);
+  setWorkspaceRaw(ws ? normalize(ws) : ws);
+}
+
+/**
+ * Rust serialises empty `Vec`s with `skip_serializing_if = "Vec::is_empty"`,
+ * so a freshly-created environment arrives over IPC with `variables` /
+ * `secrets` missing entirely. The TS type promises they exist as arrays —
+ * defend that invariant once at the boundary so call sites can stay
+ * straightforward.
+ */
+function normalize(ws: Workspace): Workspace {
+  return {
+    ...ws,
+    environments: ws.environments.map((e) => ({
+      ...e,
+      variables: e.variables ?? [],
+      secrets: e.secrets ?? [],
+    })),
+  };
 }
 
 /**

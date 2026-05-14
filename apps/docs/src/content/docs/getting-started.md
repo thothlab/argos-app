@@ -30,7 +30,7 @@ chmod +x ./argos
 ./argos --help
 ```
 
-See [CI integration](/cli/ci/) for ready-made GitHub Actions and GitLab CI
+See [CI integration](/docs/cli/ci/) for ready-made GitHub Actions and GitLab CI
 workflows.
 
 ## Create your first request
@@ -79,7 +79,7 @@ argos run ./collections \
 
 ## Next steps
 
-- [Import an existing collection](/importing/) — Postman, Insomnia, OpenAPI.
-- [Environments](/reference/environments/) — `{{baseUrl}}` and secret values.
-- [Scripting overview](/scripting/) — `bru.*` test helpers and Postman parity
+- [Import an existing collection](/docs/importing/) — Postman, Insomnia, OpenAPI.
+- [Environments](/docs/reference/environments/) — `{{baseUrl}}` and secret values.
+- [Scripting overview](/docs/scripting/) — `bru.*` test helpers and Postman parity
   via `pm.*`.

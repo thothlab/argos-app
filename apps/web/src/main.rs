@@ -115,6 +115,7 @@ fn build_router(state: AppState, config: &Config) -> Router {
 
     Router::new()
         .route("/", get(routes::landing::index))
+        .route("/logo.png", get(routes::landing::logo))
         .route("/healthz", get(routes::landing::healthz))
         .route("/download/:target", get(routes::download::redirect))
         .nest("/api", api)

@@ -34,9 +34,13 @@ export default function PromptModal() {
   return (
     <Show when={promptState().open}>
       <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-bg-primary/70"
+        class="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-bg-primary/70"
         role="dialog"
         aria-modal="true"
+        // Marks this overlay as a Kobalte top layer so any underlying
+        // Kobalte Dialog (e.g. EnvironmentEditor) does not treat clicks
+        // inside the prompt as outside-interaction and auto-close.
+        data-kb-top-layer
         onClick={(e) => {
           // Click on backdrop = cancel; clicks inside the dialog
           // bubble up but our stopPropagation below catches them.

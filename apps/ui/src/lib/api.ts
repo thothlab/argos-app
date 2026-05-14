@@ -286,6 +286,15 @@ export async function treeMove(src: string, destDir: string): Promise<string> {
   return invokeCommand<string>('tree_move', { src, destDir });
 }
 
+/**
+ * Persist the display order of a folder's children. `orderedNames` is a
+ * list of basenames (filenames for requests, directory names for folders);
+ * passing an empty array clears the manifest and falls back to alphabetical.
+ */
+export async function treeReorder(folderDir: string, orderedNames: string[]): Promise<void> {
+  return invokeCommand<void>('tree_reorder', { folderDir, orderedNames });
+}
+
 // ---- run history --------------------------------------------------------
 
 export type PersistedRun = {
@@ -331,6 +340,10 @@ export async function environmentDelete(path: string): Promise<void> {
   return invokeCommand<void>('environment_delete', { path });
 }
 
+export async function environmentRename(path: string, newName: string): Promise<string> {
+  return invokeCommand<string>('environment_rename', { path, newName });
+}
+
 // ---- crash reporter ------------------------------------------------------
 
 export type CrashSubmitResult = { sent: number; failed: number };
@@ -361,4 +374,9 @@ export async function crashRecord(message: string, location: string): Promise<vo
  *  in debug builds; production calls will fail with "unknown command". */
 export async function crashSimulate(): Promise<string> {
   return invokeCommand<string>('crash_simulate');
+}
+
+/** Open an external `http(s)` URL in the user's default browser. */
+export async function openUrl(url: string): Promise<void> {
+  return invokeCommand<void>('open_url', { url });
 }

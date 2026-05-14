@@ -1,8 +1,8 @@
 import { Match, Show, Switch } from 'solid-js';
 
 import AppShell from './components/AppShell';
+import CommandPalette from './components/CommandPalette';
 import CrashReportConsentModal from './components/CrashReportConsentModal';
-import DropImportOverlay from './components/DropImportOverlay';
 import GraphqlEditor from './components/GraphqlEditor';
 import PromptModal from './components/PromptModal';
 import ProtocolPlaceholder from './components/ProtocolPlaceholder';
@@ -17,6 +17,7 @@ import { installCrashCapture, startupCrashFlow } from './lib/crashes';
 import { bind } from './lib/hotkeys';
 import { saveActiveTab } from './lib/save';
 import { checkForUpdatesOnStartup } from './lib/updater';
+import { togglePalette } from './stores/command-palette';
 import { activeTab, activeTabId } from './stores/tabs';
 import { workspace } from './stores/workspace';
 import { installWsEventListener } from './stores/ws';
@@ -27,6 +28,10 @@ export default function App() {
   void installWsEventListener();
   void checkForUpdatesOnStartup();
   void startupCrashFlow();
+
+  bind({ key: 'k', meta: true }, () => {
+    togglePalette();
+  });
 
   // ⌘S saves the active tab. Scratch tabs (no `path`) trigger a Save-As
   // dialog the first time, then save directly thereafter.
@@ -79,8 +84,8 @@ export default function App() {
     <>
       <Toaster />
       <PromptModal />
+      <CommandPalette />
       <CrashReportConsentModal />
-      <DropImportOverlay />
       <Show when={workspace()} fallback={<WelcomeScreen />}>
         <AppShell tabContent={tabContent} />
       </Show>

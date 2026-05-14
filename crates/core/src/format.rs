@@ -43,6 +43,7 @@
 
 pub mod environment;
 pub mod folder;
+pub mod order;
 pub mod request;
 pub mod workspace;
 
@@ -107,6 +108,7 @@ pub enum Kind {
     Folder,
     Request,
     Environment,
+    Order,
 }
 
 /// Parse a YAML file into the requested type, asserting that its `kind:`
@@ -163,8 +165,10 @@ pub fn slugify(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     let mut last_dash = false;
     for ch in name.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
+        if ch.is_alphanumeric() {
+            for lc in ch.to_lowercase() {
+                out.push(lc);
+            }
             last_dash = false;
         } else if !last_dash && !out.is_empty() {
             out.push('-');
@@ -198,10 +202,12 @@ mod slug_tests {
     }
 
     #[test]
-    fn unicode_falls_through_to_separators() {
-        // Non-ASCII chars are treated as separators in v0.1 — punycode
-        // handling lands when we add file-name conflict resolution.
-        assert_eq!(slugify("Заявка №42"), "42");
+    fn unicode_is_preserved_and_lowercased() {
+        // Unicode alphanumerics are kept verbatim (lowercased) — modern
+        // filesystems handle them fine and stripping them produced
+        // "untitled" collisions for non-Latin-script users.
+        assert_eq!(slugify("Заявка №42"), "заявка-42");
+        assert_eq!(slugify("проверка"), "проверка");
     }
 
     #[test]

@@ -9,14 +9,17 @@
  * `workspace_changed` event.
  */
 
+import { ContextMenu } from '@kobalte/core/context-menu';
 import { Dialog } from '@kobalte/core/dialog';
-import { Plus, Trash2, X } from 'lucide-solid';
-import { createEffect, createSignal, For, Show, untrack } from 'solid-js';
+import { Pencil, Plus, Trash2, X } from 'lucide-solid';
+import type { JSX } from 'solid-js';
+import { createEffect, createSignal, For, Index, Show, untrack } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 
 import {
   environmentCreate,
   environmentDelete,
+  environmentRename,
   environmentSave,
   workspaceReload,
 } from '../lib/api';
@@ -118,6 +121,37 @@ export default function EnvironmentEditor(props: {
     }
   }
 
+  async function renameEnv(path: string, currentName: string) {
+    const next = await promptText({
+      title: 'Rename environment',
+      defaultValue: currentName,
+      submitLabel: 'Rename',
+    });
+    if (!next || next === currentName) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const newPath = await environmentRename(path, next);
+      const ws = workspace();
+      if (ws) {
+        const fresh = await workspaceReload(ws.root);
+        setWorkspace(fresh);
+      }
+      // The on-disk `name` field doubles as the env identifier in the
+      // picker — keep the active selection pointing at the renamed env
+      // instead of silently dropping it.
+      if (activeEnvName() === currentName) setActiveEnvName(next);
+      if (selected() === path) setSelected(newPath);
+      // Drop the stale draft (keyed on old path) so the modal doesn't
+      // keep showing it after the file watcher refreshes.
+      setDrafts((arr) => arr.filter((d) => d.path !== path));
+    } catch (e) {
+      setErr(String((e as Error).message ?? e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteEnv(path: string, name: string) {
     if (!confirm(`Delete environment "${name}"?`)) return;
     setBusy(true);
@@ -199,42 +233,44 @@ export default function EnvironmentEditor(props: {
                 <div class="flex-1 overflow-auto scrollbar-thin">
                   <For each={drafts} fallback={<EmptyHint />}>
                     {(d) => (
-                      <button
-                        type="button"
-                        class="group flex w-full items-center gap-2 border-l-2 px-3 py-2 text-left text-[13px]"
-                        classList={{
-                          'border-primary bg-bg-secondary text-fg-primary':
-                            selected() === d.path,
-                          'border-transparent text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary':
-                            selected() !== d.path,
-                        }}
-                        onClick={() => setSelected(d.path)}
-                      >
-                        <span class="flex-1 truncate font-mono">{d.name}</span>
-                        <Show when={d.dirty}>
-                          <span
-                            class="h-1.5 w-1.5 rounded-full bg-primary"
-                            aria-label="unsaved changes"
-                          />
-                        </Show>
-                        <span
-                          role="button"
-                          tabindex={0}
-                          class="invisible rounded p-0.5 text-fg-secondary hover:text-danger group-hover:visible"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void deleteEnv(d.path, d.name);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.stopPropagation();
-                              void deleteEnv(d.path, d.name);
-                            }
-                          }}
-                        >
-                          <Trash2 size={12} />
-                        </span>
-                      </button>
+                      <ContextMenu>
+                        <ContextMenu.Trigger as="div" class="contents">
+                          <button
+                            type="button"
+                            class="flex w-full items-center gap-2 border-l-2 px-3 py-2 text-left text-[13px]"
+                            classList={{
+                              'border-primary bg-bg-secondary text-fg-primary':
+                                selected() === d.path,
+                              'border-transparent text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary':
+                                selected() !== d.path,
+                            }}
+                            onClick={() => setSelected(d.path)}
+                          >
+                            <span class="flex-1 truncate font-mono">{d.name}</span>
+                            <Show when={d.dirty}>
+                              <span
+                                class="h-1.5 w-1.5 rounded-full bg-primary"
+                                aria-label="unsaved changes"
+                              />
+                            </Show>
+                          </button>
+                        </ContextMenu.Trigger>
+                        <ContextMenu.Portal>
+                          <ContextMenu.Content class="z-[60] min-w-44 overflow-hidden rounded-md border border-border bg-bg-card shadow-lg">
+                            <EnvMenuItem
+                              icon={<Pencil size={13} />}
+                              label="Rename"
+                              onSelect={() => void renameEnv(d.path, d.name)}
+                            />
+                            <EnvMenuItem
+                              icon={<Trash2 size={13} />}
+                              label="Delete"
+                              danger
+                              onSelect={() => void deleteEnv(d.path, d.name)}
+                            />
+                          </ContextMenu.Content>
+                        </ContextMenu.Portal>
+                      </ContextMenu>
                     )}
                   </For>
                 </div>
@@ -305,6 +341,24 @@ export default function EnvironmentEditor(props: {
   );
 }
 
+function EnvMenuItem(props: {
+  icon: JSX.Element;
+  label: string;
+  danger?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <ContextMenu.Item
+      class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+      classList={{ 'text-[var(--color-error-foreground)]': !!props.danger }}
+      onSelect={props.onSelect}
+    >
+      <span class="text-fg-secondary">{props.icon}</span>
+      <span>{props.label}</span>
+    </ContextMenu.Item>
+  );
+}
+
 function EmptyHint() {
   return (
     <div class="px-3 py-4 text-[12px] text-fg-secondary">
@@ -328,6 +382,12 @@ function VarsTable(props: {
   masked: boolean;
   onChange: (rows: EnvVar[]) => void;
 }) {
+  // Index of the row whose Name input should grab focus on next mount.
+  // Set by `add`, consumed (and cleared) by the input's ref callback so
+  // it only fires once — otherwise re-renders triggered by typing in
+  // other rows would yank focus back here.
+  const [focusIdx, setFocusIdx] = createSignal<number | null>(null);
+
   function update(idx: number, patch: Partial<EnvVar>) {
     const next = props.rows.map((r, i) => (i === idx ? { ...r, ...patch } : r));
     props.onChange(next);
@@ -336,6 +396,10 @@ function VarsTable(props: {
     props.onChange(props.rows.filter((_, i) => i !== idx));
   }
   function add() {
+    // Set the focus target *before* onChange — Solid may flush the
+    // store update synchronously, mounting the new row (and firing its
+    // ref callback) before the next line of this function runs.
+    setFocusIdx(props.rows.length);
     props.onChange([...props.rows, { name: '', value: '', enabled: true }]);
   }
 
@@ -354,7 +418,12 @@ function VarsTable(props: {
           <div class="px-2 py-1.5">Value</div>
           <div class="px-2 py-1.5" />
         </div>
-        <For
+        {/* <Index> keys by position, so updating a cell's value mutates
+            the same DOM input instead of re-mounting the row (which is
+            what <For>, keyed by reference, would do — and would lose
+            focus on every keystroke since `update` replaces the row
+            object). */}
+        <Index
           each={props.rows}
           fallback={
             <div class="px-3 py-3 text-[12px] text-fg-secondary">
@@ -368,37 +437,45 @@ function VarsTable(props: {
                 <input
                   type="checkbox"
                   class="accent-primary"
-                  checked={row.enabled}
-                  onChange={(e) => update(idx(), { enabled: e.currentTarget.checked })}
+                  checked={row().enabled}
+                  onChange={(e) => update(idx, { enabled: e.currentTarget.checked })}
                 />
               </div>
               <input
+                ref={(el) => {
+                  if (focusIdx() === idx) {
+                    requestAnimationFrame(() => el?.focus());
+                    setFocusIdx(null);
+                  }
+                }}
                 type="text"
                 spellcheck={false}
                 autocomplete="off"
-                class="h-8 bg-transparent px-2 font-mono text-[12px] outline-none focus:bg-bg-secondary"
-                value={row.name}
-                onInput={(e) => update(idx(), { name: e.currentTarget.value })}
+                placeholder="Name"
+                class="h-8 bg-transparent px-2 font-mono text-[12px] outline-none placeholder:text-fg-secondary"
+                value={row().name}
+                onInput={(e) => update(idx, { name: e.currentTarget.value })}
               />
               <input
                 type={props.masked ? 'password' : 'text'}
                 spellcheck={false}
                 autocomplete="off"
-                class="h-8 bg-transparent px-2 font-mono text-[12px] outline-none focus:bg-bg-secondary"
-                value={row.value}
-                onInput={(e) => update(idx(), { value: e.currentTarget.value })}
+                placeholder="Value"
+                class="h-8 bg-transparent px-2 font-mono text-[12px] outline-none placeholder:text-fg-secondary"
+                value={row().value}
+                onInput={(e) => update(idx, { value: e.currentTarget.value })}
               />
               <button
                 type="button"
                 class="rounded p-1 text-fg-secondary hover:text-danger"
-                onClick={() => remove(idx())}
+                onClick={() => remove(idx)}
                 title="Remove row"
               >
                 <Trash2 size={12} />
               </button>
             </div>
           )}
-        </For>
+        </Index>
         <button
           type="button"
           class="flex w-full items-center gap-1.5 px-3 py-1.5 text-[12px] text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"

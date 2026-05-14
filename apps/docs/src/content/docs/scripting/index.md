@@ -56,7 +56,7 @@ pm.test('user id is a number', () => {
 });
 ```
 
-See [pm.* compatibility](/scripting/pm/) for the full mapping. Anything
+See [pm.* compatibility](/docs/scripting/pm/) for the full mapping. Anything
 not listed is unimplemented — Argos warns to the console rather than
 silently no-oping.
 
@@ -84,6 +84,6 @@ appear at all on save.
 
 ## Where to next
 
-- [bru.* API reference](/scripting/bru/) — exhaustive list.
-- [pm.* compatibility](/scripting/pm/) — Postman mapping.
-- [Snippets](/scripting/snippets/) — common patterns ready to paste.
+- [bru.* API reference](/docs/scripting/bru/) — exhaustive list.
+- [pm.* compatibility](/docs/scripting/pm/) — Postman mapping.
+- [Snippets](/docs/scripting/snippets/) — common patterns ready to paste.

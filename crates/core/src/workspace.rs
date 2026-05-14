@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::format::{
+    order::Order,
     workspace::{default_gitignore, SubDir},
     Environment, Folder, FormatError, RequestDraft, WorkspaceManifest,
 };
@@ -164,7 +165,8 @@ fn scan_folder(dir: &Path, fallback_name: &str) -> Result<TreeNode, FormatError>
 
     let entries = std::fs::read_dir(dir).map_err(|e| FormatError::io(dir, e))?;
     let mut entries: Vec<_> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
-    // Stable order: folders first (alphabetical), then requests (alphabetical).
+    // Baseline alphabetical sort; _order.argos.yaml below may override it,
+    // but unlisted children still fall back to this for a stable tail.
     entries.sort();
 
     for entry in entries {
@@ -178,13 +180,19 @@ fn scan_folder(dir: &Path, fallback_name: &str) -> Result<TreeNode, FormatError>
                 .to_string();
             let sub = scan_folder(&entry, &display)?;
             children.push(sub);
-        } else if file_name == crate::format::folder::FILENAME {
-            // Already loaded as the folder meta — skip without continuing.
+        } else if file_name == crate::format::folder::FILENAME
+            || file_name == crate::format::order::FILENAME
+        {
+            // Manifest files for the folder itself — not tree entries.
         } else if file_name.ends_with(".argos.yaml") {
             let draft = RequestDraft::load(&entry)?;
             children.push(TreeNode::Request { path: entry, draft });
         }
         // Anything else (READMEs, OpenAPI specs, etc.) is silently skipped.
+    }
+
+    if let Some(order) = Order::load(dir)? {
+        apply_order(&mut children, &order.items);
     }
 
     Ok(TreeNode::Folder {
@@ -193,6 +201,35 @@ fn scan_folder(dir: &Path, fallback_name: &str) -> Result<TreeNode, FormatError>
         meta,
         children,
     })
+}
+
+/// Reorder `children` so that entries whose basename appears in `items`
+/// come first in `items`-order, and the rest keep their existing relative
+/// order (which is alphabetical, courtesy of the upstream sort).
+fn apply_order(children: &mut Vec<TreeNode>, items: &[String]) {
+    let basename = |node: &TreeNode| -> String {
+        match node {
+            TreeNode::Folder { path, .. } | TreeNode::Request { path, .. } => path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("")
+                .to_string(),
+        }
+    };
+
+    let index: std::collections::HashMap<&str, usize> =
+        items.iter().enumerate().map(|(i, s)| (s.as_str(), i)).collect();
+
+    children.sort_by(|a, b| {
+        let ai = index.get(basename(a).as_str()).copied();
+        let bi = index.get(basename(b).as_str()).copied();
+        match (ai, bi) {
+            (Some(x), Some(y)) => x.cmp(&y),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => basename(a).cmp(&basename(b)),
+        }
+    });
 }
 
 fn load_environments(dir: &Path) -> Result<Vec<EnvironmentEntry>, FormatError> {
@@ -309,6 +346,40 @@ mod tests {
         assert_eq!(ws.environments.len(), 1);
         assert_eq!(ws.environments[0].env.name, "local");
         assert!(ws.environments[0].path.ends_with("local.env.argos.yaml"));
+    }
+
+    #[test]
+    fn scan_honours_order_manifest_then_alphabetical_tail() {
+        let dir = tempdir().unwrap();
+        let ws = Workspace::create(dir.path(), "demo").unwrap();
+        let coll = dir.path().join("collections");
+
+        for stem in ["alpha", "bravo", "charlie", "delta"] {
+            let req = RequestDraft::new_rest(stem, crate::http::HttpMethod::Get, "/x");
+            req.save(&coll.join(format!("{stem}.argos.yaml"))).unwrap();
+        }
+
+        Order::new(vec![
+            "charlie.argos.yaml".into(),
+            "alpha.argos.yaml".into(),
+            "missing.argos.yaml".into(), // ignored — not on disk
+        ])
+        .save(&coll)
+        .unwrap();
+
+        let ws = Workspace::open(&ws.root).unwrap();
+        let names: Vec<String> = match ws.tree {
+            TreeNode::Folder { children, .. } => children
+                .into_iter()
+                .map(|c| match c {
+                    TreeNode::Request { draft, .. } => draft.name,
+                    TreeNode::Folder { name, .. } => name,
+                })
+                .collect(),
+            TreeNode::Request { .. } => panic!("root must be a folder"),
+        };
+        // charlie, alpha listed → first; bravo, delta unlisted → alphabetical tail.
+        assert_eq!(names, vec!["charlie", "alpha", "bravo", "delta"]);
     }
 
     #[test]

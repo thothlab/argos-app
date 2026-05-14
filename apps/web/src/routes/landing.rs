@@ -5,17 +5,32 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-/// Inline HTML — no JS, no external assets, < 4 KB. The CSS is in a
-/// `<style>` block so the page loads even when offline mirrors archive
-/// it. The four download buttons point at `/download/{target}` which
-/// then 302s to the actual GitHub Releases asset (configurable via
-/// `ARGOS_DOWNLOADS_BASE`).
+/// Inline HTML with CSS in a `<style>` block — the page loads cleanly
+/// even when offline mirrors archive it. The app-icon PNG is the only
+/// external asset, served from `/logo.png` below. The four download
+/// buttons point at `/download/{target}` which then 302s to the actual
+/// GitHub Releases asset (configurable via `ARGOS_DOWNLOADS_BASE`).
 const LANDING_HTML: &str = include_str!("../../static/landing.html");
+
+/// 1024×1024 master app icon, served at `/logo.png` for the landing
+/// header (and anywhere else a brand mark is useful).
+const LOGO_PNG: &[u8] = include_bytes!("../../static/logo.png");
 
 pub async fn index() -> Response {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
         LANDING_HTML,
+    )
+        .into_response()
+}
+
+pub async fn logo() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        LOGO_PNG,
     )
         .into_response()
 }

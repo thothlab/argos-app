@@ -12,6 +12,7 @@ use argos_core::codegen::curl;
 use argos_core::codegen::curl::from_curl;
 use argos_core::codegen::{fetch_js, go, python, rust as rust_codegen};
 use argos_core::exports::{har, postman as postman_export};
+use argos_core::format::order::Order;
 use argos_core::format::{slugify, EnvVar, Environment, Folder, RequestDraft};
 use argos_core::imports::bruno;
 use argos_core::imports::insomnia;
@@ -25,7 +26,9 @@ use argos_scripting::{
     ScriptResponse, TestResult,
 };
 use serde::{Deserialize, Serialize};
+use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_shell::ShellExt;
 use tokio::sync::{Mutex, OnceCell};
 
 use watcher::ActiveWatcher;
@@ -976,6 +979,41 @@ fn environment_delete(path: String) -> Result<(), String> {
     std::fs::remove_file(p).map_err(|e| e.to_string())
 }
 
+/// Rename an environment file: slugified filename + the `name` field
+/// inside the YAML are both updated. Returns the new absolute path.
+#[tauri::command]
+fn environment_rename(path: String, new_name: String) -> Result<String, String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("not found: {}", p.display()));
+    }
+    let parent = p.parent().ok_or_else(|| "no parent dir".to_string())?;
+    let slug = slugify(&new_name);
+
+    let build_path =
+        |suffix: &str| -> std::path::PathBuf { parent.join(format!("{slug}{suffix}.env.argos.yaml")) };
+
+    // Same target path → only the display name changes. Otherwise auto-
+    // suffix `-2`, `-3`, … on collision so two envs can share the same
+    // human label (their slugs collide but the filesystem doesn't).
+    let mut new_path = build_path("");
+    if new_path != p {
+        let mut counter = 2;
+        while new_path.exists() {
+            new_path = build_path(&format!("-{counter}"));
+            counter += 1;
+        }
+        std::fs::rename(p, &new_path).map_err(|e| e.to_string())?;
+    }
+
+    if let Ok(mut env) = Environment::load(&new_path) {
+        env.name = new_name;
+        env.save(&new_path).ok();
+    }
+
+    Ok(new_path.to_string_lossy().into_owned())
+}
+
 // ---- run history ---------------------------------------------------------
 
 /// Persisted run record. Uses opaque JSON values for `request` / `response`
@@ -1143,24 +1181,41 @@ fn tree_rename(path: String, new_name: String) -> Result<String, String> {
     let parent = p.parent().ok_or_else(|| "no parent dir".to_string())?;
     let slug = slugify(&new_name);
 
-    let new_path = if p.is_dir() {
-        parent.join(slug)
-    } else {
-        // File rename — preserve `.argos.yaml` suffix.
-        parent.join(format!("{slug}.argos.yaml"))
+    let build_path = |suffix: &str| -> std::path::PathBuf {
+        if p.is_dir() {
+            parent.join(format!("{slug}{suffix}"))
+        } else {
+            parent.join(format!("{slug}{suffix}.argos.yaml"))
+        }
     };
 
-    if new_path.exists() {
-        return Err(format!("already exists: {}", new_path.display()));
+    // Same path → noop. Otherwise auto-suffix `-2`, `-3`, … on collision
+    // so two requests can share the same human name (their slugs collide
+    // but the filesystem doesn't).
+    let mut new_path = build_path("");
+    if new_path != p {
+        let mut counter = 2;
+        while new_path.exists() {
+            new_path = build_path(&format!("-{counter}"));
+            counter += 1;
+        }
+        std::fs::rename(p, &new_path).map_err(|e| e.to_string())?;
     }
-    std::fs::rename(p, &new_path).map_err(|e| e.to_string())?;
 
-    // For folders, also update the inner _folder.argos.yaml display name.
+    // Also update the display name inside the YAML — slugify only affects
+    // the on-disk filename, but the sidebar renders `draft.name` / `folder.name`
+    // from the file contents, so without this step the rename appears as a
+    // no-op (or worse, with a non-ASCII new name that slugs to "untitled",
+    // the filename silently becomes "untitled.argos.yaml" while the visible
+    // name doesn't change).
     if new_path.is_dir() {
         if let Ok(mut f) = Folder::load(&new_path) {
             f.name = new_name;
             f.save(&new_path).ok();
         }
+    } else if let Ok(mut r) = RequestDraft::load(&new_path) {
+        r.name = new_name;
+        r.save(&new_path).ok();
     }
 
     Ok(new_path.to_string_lossy().into_owned())
@@ -1211,6 +1266,25 @@ fn tree_move(src: String, dest_dir: String) -> Result<String, String> {
     }
     std::fs::rename(s, &target).map_err(|e| e.to_string())?;
     Ok(target.to_string_lossy().into_owned())
+}
+
+/// Write (or clear) the `_order.argos.yaml` manifest in `folder_dir`.
+/// `ordered_names` is the desired display order as a list of basenames.
+/// Unknown / missing basenames are written through verbatim — `Order::load`
+/// ignores them on read, so transient drift is fine.
+#[tauri::command]
+fn tree_reorder(folder_dir: String, ordered_names: Vec<String>) -> Result<(), String> {
+    let dir = Path::new(&folder_dir);
+    if !dir.is_dir() {
+        return Err(format!("not a directory: {}", dir.display()));
+    }
+    if ordered_names.is_empty() {
+        Order::remove(dir).map_err(|e| e.to_string())
+    } else {
+        Order::new(ordered_names)
+            .save(dir)
+            .map_err(|e| e.to_string())
+    }
 }
 
 // ---- recents -------------------------------------------------------------
@@ -1396,6 +1470,21 @@ fn crash_record(message: String, location: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Open an external URL in the user's default browser.
+///
+/// We expose this as a command rather than enabling `shell:allow-open`
+/// and pulling in `@tauri-apps/plugin-shell` on the JS side — keeps the
+/// permission surface narrow (URLs only, no arbitrary files) and avoids
+/// a second npm dep.
+#[tauri::command]
+async fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("only http(s) URLs are allowed".to_string());
+    }
+    #[allow(deprecated)]
+    app.shell().open(url, None).map_err(|e| e.to_string())
+}
+
 /// Dev-only: write a fake pending crash so the UI flow can be
 /// exercised without an actual panic. Behind `cfg(debug_assertions)`
 /// so production builds can't surface it.
@@ -1494,6 +1583,93 @@ fn install_panic_hook() {
     }));
 }
 
+// ---- app menu ------------------------------------------------------------
+
+/// Build the application menu and wire menu events.
+///
+/// Done explicitly (rather than relying on Tauri's default menu) so we can
+/// control the About dialog — it shows the app icon, version, and a link
+/// back to the project site — and add a Help → Documentation entry that
+/// opens the hosted docs in the user's browser.
+fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
+    // Pull the icon Tauri already loaded from `bundle.icon` in
+    // tauri.conf.json. Falling back to `None` is harmless — the About
+    // dialog renders without an icon rather than crashing.
+    let icon = app.default_window_icon().cloned();
+
+    let about = AboutMetadata {
+        name: Some("Argos".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
+        icon,
+        website: Some("https://argos.thothlab.tech".into()),
+        website_label: Some("argos.thothlab.tech".into()),
+        ..Default::default()
+    };
+
+    let app_submenu = SubmenuBuilder::new(app, "Argos")
+        .about(Some(about))
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+
+    let edit_submenu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+
+    let view_submenu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
+
+    let window_submenu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .close_window()
+        .build()?;
+
+    let docs_item =
+        MenuItem::with_id(app, "help-docs", "Documentation", true, None::<&str>)?;
+    let help_submenu = SubmenuBuilder::new(app, "Help").item(&docs_item).build()?;
+
+    let menu = MenuBuilder::new(app)
+        .items(&[
+            &app_submenu,
+            &edit_submenu,
+            &view_submenu,
+            &window_submenu,
+            &help_submenu,
+        ])
+        .build()?;
+
+    app.set_menu(menu)?;
+
+    app.on_menu_event(|app, event| {
+        if event.id() == "help-docs" {
+            // `tauri-plugin-shell::Shell::open` is marked deprecated in favour
+            // of `tauri-plugin-opener`, but the shell plugin is already
+            // registered for other commands and the replacement only adds
+            // a second dependency for a single URL launch — keep the
+            // warning silenced rather than pulling in the new plugin.
+            #[allow(deprecated)]
+            let _ = app
+                .shell()
+                .open("https://argos.thothlab.tech/docs/".to_string(), None);
+        }
+    });
+
+    Ok(())
+}
+
 // ---- entry point ---------------------------------------------------------
 
 fn main() {
@@ -1546,6 +1722,7 @@ fn main() {
             environment_save,
             environment_create,
             environment_delete,
+            environment_rename,
             run_record,
             run_load,
             run_clear,
@@ -1555,13 +1732,19 @@ fn main() {
             tree_rename,
             tree_delete,
             tree_move,
+            tree_reorder,
             crash_pending_count,
             crash_submit_all,
             crash_dismiss_all,
             crash_record,
+            open_url,
             #[cfg(debug_assertions)]
             crash_simulate,
         ])
+        .setup(|app| {
+            install_app_menu(app.handle())?;
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running Argos desktop app");
 }

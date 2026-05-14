@@ -27,6 +27,7 @@ import { dockVisible, sidebarVisible, toggleDock, toggleSidebar } from '../store
 import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { activeEnvName, setActiveEnvName } from '../stores/active-env';
 import { setWorkspace, workspace } from '../stores/workspace';
+import { openPalette } from '../stores/command-palette';
 import { closeAllTabs } from '../stores/tabs';
 import {
   brunoImport,
@@ -402,7 +403,7 @@ function CommandPaletteTrigger() {
       type="button"
       class="flex w-72 items-center gap-2 rounded-full bg-bg-secondary px-3 py-1 text-fg-secondary hover:bg-border"
       title={`Search (${label({ key: 'K', meta: true })})`}
-      // Real palette is part of T8 / E8; this is just the affordance.
+      onClick={openPalette}
     >
       <Search size={14} />
       <span class="flex-1 text-left text-[12px]">Search or jump to…</span>
