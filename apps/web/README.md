@@ -7,9 +7,6 @@ the home Mac Mini, exposed through the existing
 [self-hosted-tunnel](https://github.com/thothlab/self-hosted-tunnel)
 infrastructure.
 
-See [`docs/11_deployment.md`](../../docs/11_deployment.md) for the
-full architecture write-up.
-
 ## Routes
 
 | Method | Path                              | Purpose                                                  |

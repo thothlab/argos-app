@@ -7,7 +7,7 @@
 //! understand. Input may be JSON *or* YAML — we try JSON first and
 //! fall back to YAML.
 //!
-//! Mapping (matches the plan in `docs/09_implementation_plan.md` T6.4):
+//! Mapping:
 //!   - `servers[0].url` → URL prefix (paths join onto it).
 //!   - `paths.{path}.{method}` → one `RequestDraft` per operation.
 //!   - `tags[0]` on the operation → folder name; no tag → root.

@@ -56,7 +56,7 @@ cargo run -p argos-cli -- --help
 ### Branches
 
 - `main` — стабильная ветка, всё что мерджится сюда — релизуется в nightly.
-- `feature/T<id>-<short-name>` — для каждой задачи из `tasks/`.
+- `feature/<short-name>` — для новой функциональности.
 - `fix/<short-name>` — для багов.
 
 ### Commits
@@ -81,16 +81,10 @@ Conventional commits:
 - [ ] `cargo clippy -- -D warnings` без ошибок.
 - [ ] `pnpm lint` и `pnpm typecheck` без ошибок.
 - [ ] Юнит-тесты на критичные пути написаны.
-- [ ] Если задача из `tasks/` — соответствующий чекбокс отмечен.
-- [ ] DoD из `docs/09_implementation_plan.md` §0.2 выполнен.
 
 ## Architecture decisions
 
-Перед добавлением зависимости / стека:
-
-1. Проверь рекомендации в [`docs/04_technical_notes.md`](docs/04_technical_notes.md) и [`docs/05_developer_specification.md`](docs/05_developer_specification.md).
-2. Если решение не покрыто — RFC через GitHub Discussion.
-3. После одобрения — обновляем `04_technical_notes.md`.
+Для нетривиальных архитектурных изменений или новых зависимостей — RFC через GitHub Discussion перед PR.
 
 ## Code style
 
@@ -103,8 +97,4 @@ Conventional commits:
 
 - Rust: `cargo test --workspace`.
 - TypeScript: `pnpm test` (vitest).
-- E2E: `pnpm test:e2e` (playwright, после E9).
-
-## Что сейчас в работе
-
-См. [`tasks/README.md`](tasks/README.md) — открытый трекер по эпикам.
+- E2E: `pnpm test:e2e` (playwright).

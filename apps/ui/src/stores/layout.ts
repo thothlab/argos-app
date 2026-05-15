@@ -1,9 +1,7 @@
 /**
  * Layout state — sidebar visibility & width, lower-dock visibility.
  *
- * Sidebar width is clamped to [`SIDEBAR_MIN`, `SIDEBAR_MAX`] (per the
- * dimensions spelled out in `docs/06_designer_specification.md` §3.2).
- *
+ * Sidebar width is clamped to [`SIDEBAR_MIN`, `SIDEBAR_MAX`].
  * Persisted: width + the two visibility flags.
  */
 

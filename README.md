@@ -31,10 +31,10 @@
 │   └── desktop/           # Tauri desktop app
 │       └── src-tauri/
 ├── apps/
-│   └── ui/                # Solid.js UI shared between desktop and web
-├── docs/                  # Project documentation (BRD, ТЗ, design specs)
-├── tasks/                 # Operational task tracker (per-epic markdowns)
-└── examples/              # Sample workspaces
+│   ├── docs/              # Astro Starlight site (argos.thothlab.tech/docs)
+│   ├── ui/                # Solid.js UI shared between desktop and web
+│   └── web/               # Landing + Tauri update / crash backend
+└── examples/              # Sample workspaces + CI integration
 ```
 
 ## Getting started
@@ -74,11 +74,7 @@ make typecheck # tsc --noEmit
 
 ## Documentation
 
-- Business requirements: [`docs/03_business_requirements.md`](docs/03_business_requirements.md)
-- Developer specification: [`docs/05_developer_specification.md`](docs/05_developer_specification.md)
-- Designer specification: [`docs/06_designer_specification.md`](docs/06_designer_specification.md)
-- Full implementation plan: [`docs/09_implementation_plan.md`](docs/09_implementation_plan.md)
-- Task tracker: [`tasks/README.md`](tasks/README.md)
+User-facing docs live at **[argos.thothlab.tech/docs](https://argos.thothlab.tech/docs/)** (source in [`apps/docs/`](apps/docs/)).
 
 ## License
 
