@@ -38,9 +38,12 @@ jobs:
       matrix:
         platform:
           - { runner: macos-14,      target: darwin-aarch64,  rust: aarch64-apple-darwin     }
-          - { runner: macos-13,      target: darwin-x86_64,   rust: x86_64-apple-darwin      }
           - { runner: ubuntu-22.04,  target: linux-x86_64,    rust: x86_64-unknown-linux-gnu }
           - { runner: windows-2022,  target: windows-x86_64,  rust: x86_64-pc-windows-msvc   }
+
+        # darwin-x86_64 (Intel Mac) is built separately on demand via
+        # the `release-darwin-x86_64` workflow — macos-13 runners have
+        # multi-hour queues and blocked manifest assembly here.
 
     steps:
       - uses: actions/checkout@v4
