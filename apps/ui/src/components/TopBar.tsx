@@ -70,10 +70,12 @@ export default function TopBar() {
 
       <WorkspacePicker />
       <EnvironmentControls />
+      <div class="ml-2">
+        <CurlImportControl />
+      </div>
 
       <div class="flex-1" />
 
-      <CurlImportControl />
       <CommandPaletteTrigger />
       <ThemeToggle />
     </header>
@@ -310,32 +312,23 @@ function WorkspacePicker() {
 }
 
 const NO_ENV = '__no_env__';
+const MANAGE_ENVS = '__manage_envs__';
 
 function EnvironmentControls() {
   const [editorOpen, setEditorOpen] = createSignal(false);
   return (
     <>
-      <EnvironmentPicker />
-      <Show when={workspace()}>
-        <button
-          type="button"
-          class="rounded-md p-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
-          title="Manage environments"
-          onClick={() => setEditorOpen(true)}
-        >
-          <Settings2 size={14} />
-        </button>
-      </Show>
+      <EnvironmentPicker onManage={() => setEditorOpen(true)} />
       <EnvironmentEditor open={editorOpen()} onOpenChange={setEditorOpen} />
     </>
   );
 }
 
-function EnvironmentPicker() {
+function EnvironmentPicker(props: { onManage: () => void }) {
   const ws = workspace;
   const options = (): string[] => {
     const list = ws()?.environments.map((e) => e.name) ?? [];
-    return [NO_ENV, ...list];
+    return [NO_ENV, ...list, MANAGE_ENVS];
   };
 
   const current = (): string => activeEnvName() ?? NO_ENV;
@@ -349,18 +342,37 @@ function EnvironmentPicker() {
     >
       <Select<string>
         value={current()}
-        onChange={(v) => setActiveEnvName(v && v !== NO_ENV ? v : null)}
+        onChange={(v) => {
+          if (v === MANAGE_ENVS) {
+            props.onManage();
+            return;
+          }
+          setActiveEnvName(v && v !== NO_ENV ? v : null);
+        }}
         options={options()}
-        itemComponent={(itemProps) => (
-          <Select.Item
-            item={itemProps.item}
-            class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[selected]:bg-bg-secondary"
-          >
-            <Select.ItemLabel class="font-mono">
-              {itemProps.item.rawValue === NO_ENV ? 'no env' : itemProps.item.rawValue}
-            </Select.ItemLabel>
-          </Select.Item>
-        )}
+        itemComponent={(itemProps) =>
+          itemProps.item.rawValue === MANAGE_ENVS ? (
+            <>
+              <div class="my-1 h-px bg-border" aria-hidden />
+              <Select.Item
+                item={itemProps.item}
+                class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] text-fg-secondary hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              >
+                <Settings2 size={12} />
+                <Select.ItemLabel>Manage environments…</Select.ItemLabel>
+              </Select.Item>
+            </>
+          ) : (
+            <Select.Item
+              item={itemProps.item}
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[selected]:bg-bg-secondary"
+            >
+              <Select.ItemLabel class="font-mono">
+                {itemProps.item.rawValue === NO_ENV ? 'no env' : itemProps.item.rawValue}
+              </Select.ItemLabel>
+            </Select.Item>
+          )
+        }
       >
         <Select.Trigger
           aria-label="Active environment"
