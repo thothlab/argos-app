@@ -38,14 +38,13 @@ pub async fn redirect(
 /// source of truth as the updater).
 pub fn asset_for_target(target: &str) -> Option<&'static str> {
     match target {
-        "macos-aarch64" | "darwin-aarch64" => Some("Argos_0.1.1_aarch64.dmg"),
-        "linux-x64" | "linux-x86_64" => Some("Argos_0.1.1_amd64.AppImage"),
-        "windows-x64" | "windows-x86_64" => Some("Argos_0.1.1_x64-setup.exe"),
-        // Intel macOS bundle was skipped in v0.1.0 (macos-13 runner
-        // starved). Until the matrix is fixed to cross-compile from
-        // macos-latest, send Intel users to the Apple Silicon dmg
-        // (runs under Rosetta).
-        "macos-x64" | "darwin-x86_64" => Some("Argos_0.1.1_aarch64.dmg"),
+        "macos-aarch64" | "darwin-aarch64" => Some("Argos_0.1.2_aarch64.dmg"),
+        "linux-x64" | "linux-x86_64" => Some("Argos_0.1.2_amd64.AppImage"),
+        "windows-x64" | "windows-x86_64" => Some("Argos_0.1.2_x64-setup.exe"),
+        // Intel macOS native build is published on demand via the
+        // release-darwin-x86_64 workflow. Until that runs for a given
+        // tag, /download/macos-x64 has no asset to point at.
+        "macos-x64" | "darwin-x86_64" => None,
         _ => None,
     }
 }
@@ -74,7 +73,7 @@ mod tests {
         let loc = res.headers().get("location").unwrap().to_str().unwrap();
         assert_eq!(
             loc,
-            "https://example.test/releases/latest/download/Argos_0.1.1_aarch64.dmg"
+            "https://example.test/releases/latest/download/Argos_0.1.2_aarch64.dmg"
         );
     }
 

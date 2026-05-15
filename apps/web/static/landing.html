@@ -88,26 +88,29 @@
         <span class="name">macOS — Apple Silicon</span>
         <span class="sub">.dmg</span>
       </a>
-      <span class="btn disabled" aria-disabled="true" title="No build published yet">
+      <span class="btn disabled" aria-disabled="true" title="No native Intel build yet — build from source or wait for a future release">
         <span class="name">macOS — Intel</span>
         <span class="sub">soon</span>
       </span>
-      <span class="btn disabled" aria-disabled="true" title="No build published yet">
+      <a class="btn" href="/download/linux-x64" title="Download Argos for Linux (AppImage)">
         <span class="name">Linux — x86_64</span>
-        <span class="sub">soon</span>
-      </span>
-      <span class="btn disabled" aria-disabled="true" title="No build published yet">
+        <span class="sub">.AppImage</span>
+      </a>
+      <a class="btn" href="/download/windows-x64" title="Download Argos for Windows (NSIS installer)">
         <span class="name">Windows — x86_64</span>
-        <span class="sub">soon</span>
-      </span>
+        <span class="sub">.exe</span>
+      </a>
     </div>
     <div class="install">
       <p><strong>macOS first launch.</strong> The dmg isn't signed with an Apple Developer ID yet, so macOS may say <em>“Argos is damaged and can't be opened.”</em> It isn't — it's just unsigned. Install with one command:</p>
       <pre>curl -fsSL https://argos.thothlab.tech/install-macos.sh | bash</pre>
       <p>Or, after dragging the app from the dmg, run this once:</p>
       <pre>xattr -dr com.apple.quarantine /Applications/Argos.app</pre>
+      <p><strong>Linux.</strong> Make the AppImage executable, then run it:</p>
+      <pre>chmod +x Argos_*_amd64.AppImage && ./Argos_*_amd64.AppImage</pre>
+      <p><strong>Windows.</strong> The installer isn't signed with an EV certificate yet, so SmartScreen will show a warning — click <em>More info → Run anyway</em>.</p>
     </div>
-    <p class="note">Closed alpha — Linux and Windows builds land here once the matrix is green. Until then, clone the repo and <code>cargo build -p argos-cli</code> for the CLI runner.</p>
+    <p class="note">Closed alpha. Intel Mac users — build from source (<code>cargo build -p argos-cli</code> for the CLI runner) until a native build is published.</p>
   </section>
 
   <section>
