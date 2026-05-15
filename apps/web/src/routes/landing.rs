@@ -16,6 +16,11 @@ const LANDING_HTML: &str = include_str!("../../static/landing.html");
 /// header (and anywhere else a brand mark is useful).
 const LOGO_PNG: &[u8] = include_bytes!("../../static/logo.png");
 
+/// macOS installer script — fetches the latest dmg, copies the bundle
+/// into /Applications, and strips `com.apple.quarantine`. Workaround
+/// for unsigned builds until Developer ID + notarization is set up.
+const INSTALL_MACOS_SH: &str = include_str!("../../static/install-macos.sh");
+
 pub async fn index() -> Response {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -31,6 +36,17 @@ pub async fn logo() -> Response {
             (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
         ],
         LOGO_PNG,
+    )
+        .into_response()
+}
+
+pub async fn install_macos() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "text/x-shellscript; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        INSTALL_MACOS_SH,
     )
         .into_response()
 }
@@ -72,6 +88,35 @@ mod tests {
         // release lands (see docs/12_releasing.md, "Re-enable…").
         assert!(body.contains("btn disabled"));
         assert!(body.contains("Apple Silicon"));
+    }
+
+    #[tokio::test]
+    async fn install_macos_returns_shell_script() {
+        let h = test_harness::make().await;
+        let res = h
+            .router
+            .oneshot(
+                Request::builder()
+                    .uri("/install-macos.sh")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let ct = res
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(ct.contains("shellscript"));
+        let body = axum::body::to_bytes(res.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        assert!(body.starts_with("#!/usr/bin/env bash"));
+        assert!(body.contains("com.apple.quarantine"));
     }
 
     #[tokio::test]

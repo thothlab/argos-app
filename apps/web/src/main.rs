@@ -8,6 +8,7 @@
 //!   - `GET  /healthz`              → 200 OK (for Caddy / monit)
 //!   - `GET  /docs/*`               → static Astro export
 //!   - `GET  /download/{target}`    → 302 → GitHub Releases
+//!   - `GET  /install-macos.sh`     → macOS installer script (curl|bash)
 //!   - `GET  /api/update/{target}/{current}` → Tauri update manifest
 //!   - `POST /api/crash`            → save + dedup crash report
 //!
@@ -116,6 +117,7 @@ fn build_router(state: AppState, config: &Config) -> Router {
     Router::new()
         .route("/", get(routes::landing::index))
         .route("/logo.png", get(routes::landing::logo))
+        .route("/install-macos.sh", get(routes::landing::install_macos))
         .route("/healthz", get(routes::landing::healthz))
         .route("/download/:target", get(routes::download::redirect))
         .nest("/api", api)
