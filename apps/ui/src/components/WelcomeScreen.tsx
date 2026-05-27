@@ -10,12 +10,14 @@
 
 import { createResource, For, Show } from 'solid-js';
 
-import { BookOpen, ExternalLink, FilePlus, FolderOpen, Sparkles } from 'lucide-solid';
+import { BookOpen, ExternalLink, FilePlus, FolderOpen, Monitor, Moon, Sparkles, Sun } from 'lucide-solid';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 
 import { openUrl, workspaceCreate, workspaceListRecent, workspaceOpen } from '../lib/api';
+import { label } from '../lib/hotkeys';
 import { isTauri } from '../lib/tauri';
 import { notify, notifyError } from '../lib/toast';
+import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { setWorkspace } from '../stores/workspace';
 import type { RecentEntry } from '../types/workspace';
 
@@ -85,7 +87,11 @@ export default function WelcomeScreen() {
   }
 
   return (
-    <div class="flex h-full w-full flex-col items-center justify-center gap-8 px-8 py-12 text-center">
+    <div class="relative flex h-full w-full flex-col items-center justify-center gap-8 px-8 py-12 text-center">
+      <div class="absolute right-4 top-4">
+        <ThemeToggle />
+      </div>
+
       <header class="flex flex-col items-center gap-2">
         <h1 class="font-mono text-5xl font-bold tracking-tight">Argos</h1>
         <p class="text-fg-secondary">A fast, git-native API client</p>
@@ -193,6 +199,22 @@ function CtaRow(props: {
 
 function Divider() {
   return <div class="h-px w-full bg-border" aria-hidden />;
+}
+
+function ThemeToggle() {
+  return (
+    <button
+      type="button"
+      class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+      title={`Cycle theme (${label({ key: 'T', meta: true, shift: true })})`}
+      onClick={cycleTheme}
+    >
+      <Show when={theme() === 'system'} fallback={effectiveTheme() === 'dark' ? <Moon size={14} /> : <Sun size={14} />}>
+        <Monitor size={14} />
+      </Show>
+      <span class="font-mono text-[11px] capitalize">{theme()}</span>
+    </button>
+  );
 }
 
 function formatRelative(ts: number): string {

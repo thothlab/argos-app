@@ -19,9 +19,11 @@ import { installCrashCapture, startupCrashFlow } from './lib/crashes';
 import { saveActiveTab } from './lib/save';
 import { checkForUpdatesOnStartup } from './lib/updater';
 import { togglePalette } from './stores/command-palette';
+import { toggleDock, toggleSidebar } from './stores/layout';
 import { openSettings } from './stores/settings-panel';
 import { initSettings } from './stores/settings';
 import { activeTab, activeTabId } from './stores/tabs';
+import { cycleTheme } from './stores/theme';
 import { workspace } from './stores/workspace';
 import { installWsEventListener } from './stores/ws';
 
@@ -67,6 +69,28 @@ export default function App() {
     label: 'Open settings',
     defaultCombo: { key: ',', meta: true },
     handler: () => openSettings(),
+  });
+
+  // Layout + theme actions live at the App level (not AppShell) so the
+  // shortcuts work on the Welcome screen too and appear in the Settings
+  // keybindings panel before any workspace is opened.
+  defineAction({
+    id: 'sidebar.toggle',
+    label: 'Toggle sidebar',
+    defaultCombo: { key: 'b', meta: true },
+    handler: toggleSidebar,
+  });
+  defineAction({
+    id: 'dock.toggle',
+    label: 'Toggle lower dock',
+    defaultCombo: { key: 'j', meta: true },
+    handler: toggleDock,
+  });
+  defineAction({
+    id: 'theme.cycle',
+    label: 'Cycle theme (light / dark / system)',
+    defaultCombo: { key: 't', meta: true, shift: true },
+    handler: cycleTheme,
   });
 
   installActionRouter();

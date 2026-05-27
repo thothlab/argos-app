@@ -15,9 +15,7 @@
 
 import { Show, type JSX } from 'solid-js';
 
-import { sidebarVisible, sidebarWidth, dockVisible, toggleSidebar, toggleDock } from '../stores/layout';
-import { cycleTheme } from '../stores/theme';
-import { defineAction } from '../lib/actions';
+import { sidebarVisible, sidebarWidth, dockVisible } from '../stores/layout';
 
 import LowerDock from './LowerDock';
 import Sidebar from './Sidebar';
@@ -31,25 +29,7 @@ export type AppShellProps = {
 };
 
 export default function AppShell(props: AppShellProps) {
-  // App-level shortcuts. Editor-local ones live with their components.
-  defineAction({
-    id: 'sidebar.toggle',
-    label: 'Toggle sidebar',
-    defaultCombo: { key: 'b', meta: true },
-    handler: toggleSidebar,
-  });
-  defineAction({
-    id: 'dock.toggle',
-    label: 'Toggle lower dock',
-    defaultCombo: { key: 'j', meta: true },
-    handler: toggleDock,
-  });
-  defineAction({
-    id: 'theme.cycle',
-    label: 'Cycle theme (light / dark / system)',
-    defaultCombo: { key: 't', meta: true, shift: true },
-    handler: cycleTheme,
-  });
+  // Global shortcuts live in App.tsx so they fire on the Welcome screen too.
 
   return (
     <div class="flex h-screen w-screen flex-col bg-bg-primary text-fg-primary">
