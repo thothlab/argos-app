@@ -87,3 +87,63 @@ export function label(combo: Combo): string {
   s += combo.key.length === 1 ? combo.key.toUpperCase() : combo.key;
   return s;
 }
+
+/**
+ * Combo ↔ portable string ("Mod+Shift+K", "Mod+,", "Alt+Enter"). `Mod` stands
+ * for ⌘/Ctrl. Used to persist user keybinding overrides in `settings.json`
+ * — visual labels are intentionally not the storage format.
+ */
+export function comboToString(c: Combo): string {
+  const parts: string[] = [];
+  if (c.meta) parts.push('Mod');
+  if (c.alt) parts.push('Alt');
+  if (c.shift) parts.push('Shift');
+  parts.push(c.key.length === 1 ? c.key.toUpperCase() : c.key);
+  return parts.join('+');
+}
+
+export function parseCombo(s: string): Combo | null {
+  const parts = s.split('+').map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  const combo: Combo = { key: '' };
+  for (let i = 0; i < parts.length - 1; i++) {
+    const m = parts[i]!.toLowerCase();
+    if (m === 'mod' || m === 'cmd' || m === 'ctrl') combo.meta = true;
+    else if (m === 'shift') combo.shift = true;
+    else if (m === 'alt' || m === 'option') combo.alt = true;
+    else return null;
+  }
+  combo.key = parts[parts.length - 1]!;
+  if (combo.key.length === 0) return null;
+  return combo;
+}
+
+/**
+ * Read a `keydown` event into a Combo. Returns `null` for modifier-only
+ * events (so the keybinding capture UI can wait for a real key).
+ */
+export function eventToCombo(e: KeyboardEvent): Combo | null {
+  const k = e.key;
+  if (k === 'Meta' || k === 'Control' || k === 'Shift' || k === 'Alt' || k === 'AltGraph') {
+    return null;
+  }
+  return {
+    key: k,
+    meta: e.metaKey || e.ctrlKey,
+    shift: e.shiftKey,
+    alt: e.altKey,
+  };
+}
+
+export function comboEquals(a: Combo, b: Combo): boolean {
+  return (
+    a.key.toLowerCase() === b.key.toLowerCase() &&
+    !!a.meta === !!b.meta &&
+    !!a.shift === !!b.shift &&
+    !!a.alt === !!b.alt
+  );
+}
+
+export function comboMatchesEvent(e: KeyboardEvent, c: Combo): boolean {
+  return matches(e, c);
+}

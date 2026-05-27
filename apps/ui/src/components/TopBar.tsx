@@ -28,6 +28,7 @@ import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { activeEnvName, setActiveEnvName } from '../stores/active-env';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { openPalette } from '../stores/command-palette';
+import { openSettings } from '../stores/settings-panel';
 import { closeAllTabs } from '../stores/tabs';
 import {
   brunoImport,
@@ -298,6 +299,17 @@ function WorkspacePicker() {
           <div class="border-b border-border px-3 py-2 font-mono text-[10px] text-fg-secondary">
             <div class="truncate">{ws()?.root}</div>
           </div>
+          <DropdownMenu.Item
+            class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+            onSelect={() => openSettings()}
+          >
+            <Settings2 size={14} class="text-fg-secondary" />
+            <span>Settings…</span>
+            <span class="ml-auto font-mono text-[10px] text-fg-secondary">
+              {label({ key: ',', meta: true })}
+            </span>
+          </DropdownMenu.Item>
+          <div class="my-1 h-px bg-border" aria-hidden />
           <DropdownMenu.Item
             class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
             onSelect={close}

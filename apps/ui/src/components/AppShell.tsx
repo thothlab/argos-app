@@ -17,7 +17,7 @@ import { Show, type JSX } from 'solid-js';
 
 import { sidebarVisible, sidebarWidth, dockVisible, toggleSidebar, toggleDock } from '../stores/layout';
 import { cycleTheme } from '../stores/theme';
-import { bind } from '../lib/hotkeys';
+import { defineAction } from '../lib/actions';
 
 import LowerDock from './LowerDock';
 import Sidebar from './Sidebar';
@@ -32,9 +32,24 @@ export type AppShellProps = {
 
 export default function AppShell(props: AppShellProps) {
   // App-level shortcuts. Editor-local ones live with their components.
-  bind({ key: 'b', meta: true }, toggleSidebar);
-  bind({ key: 'j', meta: true }, toggleDock);
-  bind({ key: 't', meta: true, shift: true }, cycleTheme);
+  defineAction({
+    id: 'sidebar.toggle',
+    label: 'Toggle sidebar',
+    defaultCombo: { key: 'b', meta: true },
+    handler: toggleSidebar,
+  });
+  defineAction({
+    id: 'dock.toggle',
+    label: 'Toggle lower dock',
+    defaultCombo: { key: 'j', meta: true },
+    handler: toggleDock,
+  });
+  defineAction({
+    id: 'theme.cycle',
+    label: 'Cycle theme (light / dark / system)',
+    defaultCombo: { key: 't', meta: true, shift: true },
+    handler: cycleTheme,
+  });
 
   return (
     <div class="flex h-screen w-screen flex-col bg-bg-primary text-fg-primary">

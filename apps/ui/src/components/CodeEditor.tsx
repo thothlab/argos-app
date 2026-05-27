@@ -4,16 +4,29 @@
  * The `value` prop is one-way: external changes overwrite the editor's
  * contents. Edits inside the editor flow back via `onChange`. Round-trip
  * loops are guarded by tracking the last value we pushed in.
+ *
+ * Theme / font size / tab size / line wrapping are driven by the settings
+ * store ([[settings.ts]]) — kept reactive via CodeMirror compartments so
+ * a settings change reconfigures live editors without remounting.
  */
 
 import { javascript } from '@codemirror/lang-javascript';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { bracketMatching, indentOnInput, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
+import {
+  bracketMatching,
+  indentOnInput,
+  indentUnit,
+  syntaxHighlighting,
+  defaultHighlightStyle,
+} from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { createEffect, onCleanup, onMount } from 'solid-js';
+
+import { settings } from '../stores/settings';
+import { effectiveTheme } from '../stores/theme';
 
 export type CodeEditorRef = {
   /** Insert `text` at the current selection, replacing it. Returns the new value. */
@@ -21,6 +34,28 @@ export type CodeEditorRef = {
   /** Focus the editor. */
   focus: () => void;
 };
+
+function fontSizeExt(px: number) {
+  return EditorView.theme({
+    '&': { fontSize: `${px}px` },
+    '.cm-content': { fontSize: `${px}px` },
+    '.cm-gutters': { fontSize: `${px}px` },
+  });
+}
+
+function tabSizeExt(n: number) {
+  return [EditorState.tabSize.of(n), indentUnit.of(' '.repeat(n))];
+}
+
+function wrapExt(on: boolean) {
+  return on ? EditorView.lineWrapping : [];
+}
+
+function themeExt(mode: 'follow-app' | 'one-dark') {
+  if (mode === 'one-dark') return oneDark;
+  // follow-app — light/dark mirrors the application theme.
+  return effectiveTheme() === 'dark' ? oneDark : [];
+}
 
 export default function CodeEditor(props: {
   value: string;
@@ -36,7 +71,15 @@ export default function CodeEditor(props: {
   // re-passes the same `value` back in.
   let lastEmittedValue = props.value;
 
+  // Compartments let us swap a single facet (font / tabs / wrap / theme)
+  // without rebuilding the entire EditorState.
+  const fontC = new Compartment();
+  const tabC = new Compartment();
+  const wrapC = new Compartment();
+  const themeC = new Compartment();
+
   onMount(() => {
+    const s = settings();
     const state = EditorState.create({
       doc: props.value,
       extensions: [
@@ -47,14 +90,11 @@ export default function CodeEditor(props: {
         closeBrackets(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         javascript(),
-        oneDark,
-        keymap.of([
-          ...closeBracketsKeymap,
-          ...defaultKeymap,
-          ...historyKeymap,
-          indentWithTab,
-        ]),
-        EditorView.lineWrapping,
+        themeC.of(themeExt(s.editor.theme)),
+        fontC.of(fontSizeExt(s.editor.fontSize)),
+        tabC.of(tabSizeExt(s.editor.tabSize)),
+        wrapC.of(wrapExt(s.editor.lineWrapping)),
+        keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.updateListener.of((u) => {
           if (!u.docChanged) return;
           const next = u.state.doc.toString();
@@ -92,6 +132,31 @@ export default function CodeEditor(props: {
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: v },
     });
+  });
+
+  // Reactive editor preferences. Each effect tracks one slice so unrelated
+  // settings don't trigger a re-dispatch.
+  createEffect(() => {
+    const size = settings().editor.fontSize;
+    if (!view) return;
+    view.dispatch({ effects: fontC.reconfigure(fontSizeExt(size)) });
+  });
+  createEffect(() => {
+    const n = settings().editor.tabSize;
+    if (!view) return;
+    view.dispatch({ effects: tabC.reconfigure(tabSizeExt(n)) });
+  });
+  createEffect(() => {
+    const on = settings().editor.lineWrapping;
+    if (!view) return;
+    view.dispatch({ effects: wrapC.reconfigure(wrapExt(on)) });
+  });
+  createEffect(() => {
+    const mode = settings().editor.theme;
+    // Also track the resolved app theme so `follow-app` reacts to ⌘⇧T.
+    void effectiveTheme();
+    if (!view) return;
+    view.dispatch({ effects: themeC.reconfigure(themeExt(mode)) });
   });
 
   onCleanup(() => {

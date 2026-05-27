@@ -3,6 +3,7 @@ import { Match, Show, Switch } from 'solid-js';
 import AppShell from './components/AppShell';
 import CommandPalette from './components/CommandPalette';
 import CrashReportConsentModal from './components/CrashReportConsentModal';
+import SettingsPanel from './components/SettingsPanel';
 import GraphqlEditor from './components/GraphqlEditor';
 import PromptModal from './components/PromptModal';
 import ProtocolPlaceholder from './components/ProtocolPlaceholder';
@@ -12,41 +13,63 @@ import Splitter from './components/Splitter';
 import Toaster from './components/Toaster';
 import WebsocketEditor from './components/WebsocketEditor';
 import WelcomeScreen from './components/WelcomeScreen';
+import { defineAction, installActionRouter } from './lib/actions';
 import { installAutosave } from './lib/autosave';
 import { installCrashCapture, startupCrashFlow } from './lib/crashes';
-import { bind } from './lib/hotkeys';
 import { saveActiveTab } from './lib/save';
 import { checkForUpdatesOnStartup } from './lib/updater';
 import { togglePalette } from './stores/command-palette';
+import { openSettings } from './stores/settings-panel';
+import { initSettings } from './stores/settings';
 import { activeTab, activeTabId } from './stores/tabs';
 import { workspace } from './stores/workspace';
 import { installWsEventListener } from './stores/ws';
 
 export default function App() {
+  // Settings before UI side-effects — theme rendering reads from here.
+  void initSettings();
   installAutosave();
   installCrashCapture();
   void installWsEventListener();
   void checkForUpdatesOnStartup();
   void startupCrashFlow();
 
-  bind({ key: 'k', meta: true }, () => {
-    togglePalette();
+  defineAction({
+    id: 'palette.toggle',
+    label: 'Toggle command palette',
+    defaultCombo: { key: 'k', meta: true },
+    handler: () => togglePalette(),
   });
 
   // ⌘S saves the active tab. Scratch tabs (no `path`) trigger a Save-As
   // dialog the first time, then save directly thereafter.
-  bind({ key: 's', meta: true }, async () => {
-    const outcome = await saveActiveTab();
-    switch (outcome.kind) {
-      case 'saved':
-      case 'cancelled':
-      case 'no-tab':
-      case 'no-workspace':
-        return;
-      case 'error':
-        alert(`Save failed:\n\n${outcome.message}`);
-    }
+  defineAction({
+    id: 'request.save',
+    label: 'Save active tab',
+    defaultCombo: { key: 's', meta: true },
+    handler: () => {
+      void saveActiveTab().then((outcome) => {
+        switch (outcome.kind) {
+          case 'saved':
+          case 'cancelled':
+          case 'no-tab':
+          case 'no-workspace':
+            return;
+          case 'error':
+            alert(`Save failed:\n\n${outcome.message}`);
+        }
+      });
+    },
   });
+
+  defineAction({
+    id: 'settings.open',
+    label: 'Open settings',
+    defaultCombo: { key: ',', meta: true },
+    handler: () => openSettings(),
+  });
+
+  installActionRouter();
 
   const tabContent = () => (
     <Show
@@ -86,6 +109,7 @@ export default function App() {
       <PromptModal />
       <CommandPalette />
       <CrashReportConsentModal />
+      <SettingsPanel />
       <Show when={workspace()} fallback={<WelcomeScreen />}>
         <AppShell tabContent={tabContent} />
       </Show>

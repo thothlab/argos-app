@@ -1,59 +1,56 @@
 /**
- * Theme store.
+ * Theme — facade over the settings store.
  *
- * Three values:
- * - `light` — force light, ignore system.
- * - `dark`  — force dark, ignore system.
- * - `system` — follow `prefers-color-scheme` and re-evaluate on changes.
- *
- * Persisted in localStorage as `argos:theme`. Applied to `<html>` via
- * the `dark` class — Tailwind picks it up via `darkMode: "class"`.
+ * Three values: `light` / `dark` / `system`. Persisted via `settings.json`
+ * (see [[settings.ts]]); this module owns the application side-effects:
+ * toggling the `dark` class on `<html>` and re-evaluating when the OS
+ * appearance flips while in `system` mode.
  */
 
-import { createSignal, createEffect } from 'solid-js';
+import { createEffect, createSignal } from 'solid-js';
 
-import { loadJSON, saveJSON } from '../lib/persist';
+import { settings, setTheme as setThemeInSettings } from './settings';
 
 export type Theme = 'light' | 'dark' | 'system';
 
-const STORAGE_KEY = 'argos:theme';
-
-const [theme, setThemeRaw] = createSignal<Theme>(loadJSON<Theme>(STORAGE_KEY, 'system'));
-
-export { theme };
-
-export function setTheme(t: Theme): void {
-  setThemeRaw(t);
+export function theme(): Theme {
+  return settings().appearance.theme;
 }
 
-/** Resolve `system` to the current concrete value. */
+export function setTheme(t: Theme): void {
+  setThemeInSettings(t);
+}
+
+// OS appearance — kept as a signal so consumers (CodeEditor, etc.)
+// re-render when the user flips system-wide light/dark while in `system` mode.
+const [osDark, setOsDark] = createSignal(
+  typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-color-scheme: dark)').matches,
+);
+
+if (typeof window !== 'undefined') {
+  const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  mql.addEventListener('change', (e) => setOsDark(e.matches));
+}
+
+/** Resolve `system` to the current concrete value. Reactive in `system` mode. */
 export function effectiveTheme(): 'light' | 'dark' {
   const t = theme();
   if (t !== 'system') return t;
-  if (typeof window === 'undefined') return 'light';
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return osDark() ? 'dark' : 'light';
 }
 
 function applyTheme() {
   if (typeof document === 'undefined') return;
-  const eff = effectiveTheme();
-  document.documentElement.classList.toggle('dark', eff === 'dark');
+  document.documentElement.classList.toggle('dark', effectiveTheme() === 'dark');
 }
 
-// Persist + re-apply whenever the user changes their preference.
+// Re-apply whenever the effective theme changes — handles both the stored
+// preference (settings.appearance.theme) and OS flips in `system` mode.
 createEffect(() => {
-  const t = theme();
-  saveJSON(STORAGE_KEY, t);
+  void effectiveTheme();
   applyTheme();
 });
-
-// Re-apply when the system preference flips (only matters in `system` mode).
-if (typeof window !== 'undefined') {
-  const mql = window.matchMedia('(prefers-color-scheme: dark)');
-  mql.addEventListener('change', () => {
-    if (theme() === 'system') applyTheme();
-  });
-}
 
 /** Cycle light → dark → system → light. Used by the keyboard shortcut. */
 export function cycleTheme(): void {

@@ -217,6 +217,22 @@ export async function workspaceClearRecent(): Promise<void> {
   return invokeCommand<void>('workspace_clear_recent');
 }
 
+// ---- settings ------------------------------------------------------------
+
+/** Raw settings blob from `~/Library/Application Support/<bundle>/settings.json`.
+ *  Shape is owned by the UI — see `stores/settings.ts`. */
+export async function settingsLoad(): Promise<unknown> {
+  return invokeCommand<unknown>('settings_load');
+}
+
+export async function settingsSave(data: unknown): Promise<void> {
+  return invokeCommand<void>('settings_save', { data });
+}
+
+export async function settingsReset(): Promise<void> {
+  return invokeCommand<void>('settings_reset');
+}
+
 export async function workspaceClose(): Promise<void> {
   return invokeCommand<void>('workspace_close');
 }

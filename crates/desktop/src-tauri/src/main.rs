@@ -1362,6 +1362,44 @@ fn workspace_clear_recent(app: tauri::AppHandle) -> Result<(), String> {
     write_recents(&app, &Recents::default())
 }
 
+// ---- settings ------------------------------------------------------------
+//
+// User settings live next to recents.json under the platform's
+// app-config dir. The schema is owned by the UI — we just persist the JSON
+// blob it hands us. That keeps shape changes a UI-only concern.
+
+fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir.join("settings.json"))
+}
+
+#[tauri::command]
+fn settings_load(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let path = settings_path(&app)?;
+    if !path.exists() {
+        return Ok(serde_json::Value::Object(Default::default()));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn settings_save(app: tauri::AppHandle, data: serde_json::Value) -> Result<(), String> {
+    let path = settings_path(&app)?;
+    let body = serde_json::to_vec_pretty(&data).map_err(|e| e.to_string())?;
+    std::fs::write(&path, body).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn settings_reset(app: tauri::AppHandle) -> Result<(), String> {
+    let path = settings_path(&app)?;
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 // ---- crash reporter commands --------------------------------------------
 
 /// Count of pending crash reports waiting to be sent.
@@ -1718,6 +1756,9 @@ fn main() {
             workspace_reload,
             workspace_list_recent,
             workspace_clear_recent,
+            settings_load,
+            settings_save,
+            settings_reset,
             request_save,
             environment_save,
             environment_create,
