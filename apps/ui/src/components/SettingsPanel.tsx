@@ -468,16 +468,16 @@ function Toggle(props: { checked: boolean; onChange: (v: boolean) => void }) {
       type="button"
       role="switch"
       aria-checked={props.checked}
-      class="relative h-5 w-9 rounded-full border border-border transition-colors"
+      class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-2 border-transparent transition-colors"
       classList={{
         'bg-primary': props.checked,
-        'bg-bg-secondary': !props.checked,
+        'bg-border': !props.checked,
       }}
       onClick={() => props.onChange(!props.checked)}
     >
       <span
-        class="absolute top-0.5 h-3.5 w-3.5 rounded-full bg-bg-card shadow transition-transform"
-        classList={{ 'translate-x-4': props.checked, 'translate-x-0.5': !props.checked }}
+        class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform"
+        classList={{ 'translate-x-4': props.checked, 'translate-x-0': !props.checked }}
       />
     </button>
   );
