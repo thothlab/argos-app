@@ -10,13 +10,14 @@
 
 import { createResource, For, Show } from 'solid-js';
 
-import { BookOpen, ExternalLink, FilePlus, FolderOpen, Monitor, Moon, Sparkles, Sun } from 'lucide-solid';
+import { BookOpen, ExternalLink, FilePlus, FolderOpen, Monitor, Moon, Settings2, Sparkles, Sun } from 'lucide-solid';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 
 import { openUrl, workspaceCreate, workspaceListRecent, workspaceOpen } from '../lib/api';
 import { label } from '../lib/hotkeys';
 import { isTauri } from '../lib/tauri';
 import { notify, notifyError } from '../lib/toast';
+import { openSettings } from '../stores/settings-panel';
 import { cycleTheme, effectiveTheme, theme } from '../stores/theme';
 import { setWorkspace } from '../stores/workspace';
 import type { RecentEntry } from '../types/workspace';
@@ -88,8 +89,17 @@ export default function WelcomeScreen() {
 
   return (
     <div class="relative flex h-full w-full flex-col items-center justify-center gap-8 px-8 py-12 text-center">
-      <div class="absolute right-4 top-4">
+      <div class="absolute right-4 top-4 flex items-center gap-1">
         <ThemeToggle />
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-md p-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+          title={`Settings (${label({ key: ',', meta: true })})`}
+          aria-label="Open settings"
+          onClick={() => openSettings()}
+        >
+          <Settings2 size={16} />
+        </button>
       </div>
 
       <header class="flex flex-col items-center gap-2">

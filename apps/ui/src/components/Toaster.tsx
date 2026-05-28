@@ -30,6 +30,7 @@ export function ToastView(props: {
   variant: 'info' | 'success' | 'error';
   title: string;
   description?: string;
+  action?: { label: string; onClick: () => void };
 }) {
   const accent =
     props.variant === 'error'
@@ -49,6 +50,15 @@ export function ToastView(props: {
           <Toast.Description class="mt-0.5 text-[12px] text-fg-secondary">
             {props.description}
           </Toast.Description>
+        ) : null}
+        {props.action ? (
+          <button
+            type="button"
+            class="mt-1.5 rounded text-[12px] font-medium text-primary hover:underline"
+            onClick={props.action.onClick}
+          >
+            {props.action.label}
+          </button>
         ) : null}
       </div>
       <Toast.CloseButton class="shrink-0 rounded p-1 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary">

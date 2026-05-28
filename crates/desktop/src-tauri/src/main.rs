@@ -1494,6 +1494,81 @@ fn crash_dismiss_all() -> Result<usize, String> {
     argos_core::crash::dismiss_pending(&crash_data_dir()).map_err(|e| e.to_string())
 }
 
+/// One entry in the submitted-reports list shown to the user.
+/// Bundles the full `CrashReport` with the on-disk path so the UI
+/// can offer "show in Finder" without a second round-trip.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubmittedCrashEntry {
+    pub path: String,
+    pub report: argos_core::crash::CrashReport,
+}
+
+/// List every crash report under `submitted/`. Sorted newest-first
+/// (by directory bucket name, which is `YYYY-MM-DD`). `limit` caps
+/// the count — pass `None` for everything.
+#[tauri::command]
+fn crash_list_submitted(limit: Option<usize>) -> Result<Vec<SubmittedCrashEntry>, String> {
+    let root = crash_data_dir().join("crashes").join("submitted");
+    let mut day_dirs: Vec<PathBuf> = match std::fs::read_dir(&root) {
+        Ok(rd) => rd
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.is_dir())
+            .collect(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.to_string()),
+    };
+    // Newest-first by folder name (lex-sort works for YYYY-MM-DD).
+    day_dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+    let cap = limit.unwrap_or(usize::MAX);
+    let mut out: Vec<SubmittedCrashEntry> = Vec::new();
+    for day in day_dirs {
+        let Ok(rd) = std::fs::read_dir(&day) else {
+            continue;
+        };
+        let mut files: Vec<PathBuf> = rd
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "json"))
+            .collect();
+        // Within a day, sort by modified time descending. Falls back to
+        // file name order if mtime isn't readable.
+        files.sort_by(|a, b| {
+            let ma = a.metadata().and_then(|m| m.modified()).ok();
+            let mb = b.metadata().and_then(|m| m.modified()).ok();
+            mb.cmp(&ma)
+        });
+        for path in files {
+            if out.len() >= cap {
+                break;
+            }
+            if let Ok(report) = argos_core::crash::read(&path) {
+                out.push(SubmittedCrashEntry {
+                    path: path.to_string_lossy().into_owned(),
+                    report,
+                });
+            }
+        }
+        if out.len() >= cap {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+/// Reveal the crashes directory in the OS file manager.
+#[tauri::command]
+fn crash_reveal_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = crash_data_dir().join("crashes");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.to_string_lossy().into_owned();
+    app.shell()
+        .open(path.clone(), None)
+        .map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 /// Record a JS-side error / unhandled rejection as a pending crash
 /// report. Called by the renderer's global error handler.
 #[tauri::command]
@@ -1644,8 +1719,18 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         ..Default::default()
     };
 
+    let prefs_item = MenuItem::with_id(
+        app,
+        "app-prefs",
+        "Settings…",
+        true,
+        Some("CmdOrCtrl+,"),
+    )?;
+
     let app_submenu = SubmenuBuilder::new(app, "Argos")
         .about(Some(about))
+        .separator()
+        .item(&prefs_item)
         .separator()
         .services()
         .separator()
@@ -1692,6 +1777,11 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     app.set_menu(menu)?;
 
     app.on_menu_event(|app, event| {
+        if event.id() == "app-prefs" {
+            // Forward to the renderer — the actual Settings UI lives there.
+            // Event name matches the listener in `apps/ui/src/App.tsx`.
+            let _ = app.emit("settings:open", ());
+        }
         if event.id() == "help-docs" {
             // `tauri-plugin-shell::Shell::open` is marked deprecated in favour
             // of `tauri-plugin-opener`, but the shell plugin is already
@@ -1778,6 +1868,8 @@ fn main() {
             crash_submit_all,
             crash_dismiss_all,
             crash_record,
+            crash_list_submitted,
+            crash_reveal_dir,
             open_url,
             #[cfg(debug_assertions)]
             crash_simulate,

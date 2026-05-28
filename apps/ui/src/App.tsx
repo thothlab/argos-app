@@ -3,6 +3,7 @@ import { Match, Show, Switch } from 'solid-js';
 import AppShell from './components/AppShell';
 import CommandPalette from './components/CommandPalette';
 import CrashReportConsentModal from './components/CrashReportConsentModal';
+import CrashReportsPanel from './components/CrashReportsPanel';
 import SettingsPanel from './components/SettingsPanel';
 import GraphqlEditor from './components/GraphqlEditor';
 import PromptModal from './components/PromptModal';
@@ -17,6 +18,7 @@ import { defineAction, installActionRouter } from './lib/actions';
 import { installAutosave } from './lib/autosave';
 import { installCrashCapture, startupCrashFlow } from './lib/crashes';
 import { saveActiveTab } from './lib/save';
+import { installNativeMenuBridge } from './lib/native-menu';
 import { checkForUpdatesOnStartup } from './lib/updater';
 import { togglePalette } from './stores/command-palette';
 import { toggleDock, toggleSidebar } from './stores/layout';
@@ -33,6 +35,7 @@ export default function App() {
   installAutosave();
   installCrashCapture();
   void installWsEventListener();
+  void installNativeMenuBridge();
   void checkForUpdatesOnStartup();
   void startupCrashFlow();
 
@@ -133,6 +136,7 @@ export default function App() {
       <PromptModal />
       <CommandPalette />
       <CrashReportConsentModal />
+      <CrashReportsPanel />
       <SettingsPanel />
       <Show when={workspace()} fallback={<WelcomeScreen />}>
         <AppShell tabContent={tabContent} />

@@ -11,6 +11,7 @@ import { createSignal, For, Show, createEffect, onCleanup, type JSX } from 'soli
 import { RotateCcw, X } from 'lucide-solid';
 
 import { closeSettings, settingsActiveTab, settingsOpen, setSettingsTab, type SettingsTab } from '../stores/settings-panel';
+import { openCrashLog } from '../stores/crash-log-panel';
 import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
@@ -427,6 +428,21 @@ function AdvancedTab() {
           onClick={() => void doReset()}
         >
           Reset all
+        </button>
+      </Row>
+
+      <div class="mt-4 border-t border-border pt-4" />
+      <SectionHeading>Diagnostics</SectionHeading>
+      <Row label="Crash reports" hint="Inspect crash reports Argos has submitted from this install.">
+        <button
+          type="button"
+          class="rounded border border-border bg-bg-secondary px-3 py-1.5 text-[12px] hover:bg-border"
+          onClick={() => {
+            closeSettings();
+            openCrashLog();
+          }}
+        >
+          View log…
         </button>
       </Row>
     </>

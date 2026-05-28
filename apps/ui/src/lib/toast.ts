@@ -17,21 +17,27 @@ import { ToastView } from '../components/Toaster';
 
 type Variant = 'info' | 'success' | 'error';
 
-function show(variant: Variant, title: string, description?: string): void {
+type ToastAction = { label: string; onClick: () => void };
+
+function show(variant: Variant, title: string, description?: string, action?: ToastAction): void {
   toaster.show((props) =>
     ToastView({
       toastId: props.toastId,
       variant,
       title,
       description,
+      action,
     }),
   );
 }
 
 export const notify = {
-  info: (title: string, description?: string) => show('info', title, description),
-  success: (title: string, description?: string) => show('success', title, description),
-  error: (title: string, description?: string) => show('error', title, description),
+  info: (title: string, description?: string, action?: ToastAction) =>
+    show('info', title, description, action),
+  success: (title: string, description?: string, action?: ToastAction) =>
+    show('success', title, description, action),
+  error: (title: string, description?: string, action?: ToastAction) =>
+    show('error', title, description, action),
 };
 
 /** Convenience for catch handlers — formats an unknown thrown value

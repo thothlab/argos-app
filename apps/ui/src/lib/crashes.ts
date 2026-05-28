@@ -24,6 +24,7 @@ import {
 import { loadJSON, saveJSON } from './persist';
 import { isTauri } from './tauri';
 import { notify, notifyError } from './toast';
+import { openCrashLog } from '../stores/crash-log-panel';
 import { pushErrorLog } from '../stores/error-log';
 
 const CONSENT_KEY = 'argos:crash:consent';
@@ -83,6 +84,7 @@ export async function startupCrashFlow(): Promise<void> {
         notify.success(
           'Crash reports sent',
           `${r.sent} report${r.sent === 1 ? '' : 's'} submitted${r.failed ? `, ${r.failed} retrying next launch` : ''}.`,
+          { label: 'View what was sent', onClick: () => openCrashLog() },
         );
       }
       return;
@@ -125,6 +127,7 @@ export async function applyConsent(
       notify.success(
         'Crash reports sent',
         `Thank you — ${r.sent} report${r.sent === 1 ? '' : 's'} submitted${r.failed ? `, ${r.failed} retrying next launch` : ''}.`,
+        { label: 'View what was sent', onClick: () => openCrashLog() },
       );
     }
     if (r.failed > 0 && r.sent === 0) {

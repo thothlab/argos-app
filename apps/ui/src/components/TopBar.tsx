@@ -79,7 +79,22 @@ export default function TopBar() {
 
       <CommandPaletteTrigger />
       <ThemeToggle />
+      <SettingsTrigger />
     </header>
+  );
+}
+
+function SettingsTrigger() {
+  return (
+    <button
+      type="button"
+      class="flex items-center gap-1.5 rounded-md p-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+      title={`Settings (${label({ key: ',', meta: true })})`}
+      aria-label="Open settings"
+      onClick={() => openSettings()}
+    >
+      <Settings2 size={16} />
+    </button>
   );
 }
 
@@ -299,17 +314,6 @@ function WorkspacePicker() {
           <div class="border-b border-border px-3 py-2 font-mono text-[10px] text-fg-secondary">
             <div class="truncate">{ws()?.root}</div>
           </div>
-          <DropdownMenu.Item
-            class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
-            onSelect={() => openSettings()}
-          >
-            <Settings2 size={14} class="text-fg-secondary" />
-            <span>Settings…</span>
-            <span class="ml-auto font-mono text-[10px] text-fg-secondary">
-              {label({ key: ',', meta: true })}
-            </span>
-          </DropdownMenu.Item>
-          <div class="my-1 h-px bg-border" aria-hidden />
           <DropdownMenu.Item
             class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[13px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
             onSelect={close}

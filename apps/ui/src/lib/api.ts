@@ -386,6 +386,39 @@ export async function crashRecord(message: string, location: string): Promise<vo
   return invokeCommand<void>('crash_record', { message, location });
 }
 
+/** A single crash report as written to disk and sent to the server.
+ *  Mirrors `argos_core::crash::CrashReport` — see `crates/core/src/crash.rs`. */
+export type CrashReport = {
+  schema: string;
+  app_version: string;
+  os: string;
+  ts: string;
+  panic: {
+    message: string;
+    location: string;
+    backtrace?: string | null;
+  };
+  session_id?: string | null;
+};
+
+export type SubmittedCrashEntry = {
+  /** Absolute path of the archived report on disk. */
+  path: string;
+  report: CrashReport;
+};
+
+/** List crash reports previously submitted to the server (archived locally
+ *  under `crashes/submitted/`). Newest first. */
+export async function crashListSubmitted(limit?: number): Promise<SubmittedCrashEntry[]> {
+  return invokeCommand<SubmittedCrashEntry[]>('crash_list_submitted', { limit: limit ?? null });
+}
+
+/** Reveal the local `crashes/` directory in the OS file manager. Returns
+ *  the directory path so the UI can show it as a fallback. */
+export async function crashRevealDir(): Promise<string> {
+  return invokeCommand<string>('crash_reveal_dir');
+}
+
 /** Dev-only: simulate a crash by writing a fake report. Only available
  *  in debug builds; production calls will fail with "unknown command". */
 export async function crashSimulate(): Promise<string> {
