@@ -19,25 +19,28 @@ type Variant = 'info' | 'success' | 'error';
 
 type ToastAction = { label: string; onClick: () => void };
 
-function show(variant: Variant, title: string, description?: string, action?: ToastAction): void {
+type ToastOpts = { action?: ToastAction; persistent?: boolean };
+
+function show(variant: Variant, title: string, description?: string, opts?: ToastOpts): void {
   toaster.show((props) =>
     ToastView({
       toastId: props.toastId,
       variant,
       title,
       description,
-      action,
+      action: opts?.action,
+      persistent: opts?.persistent,
     }),
   );
 }
 
 export const notify = {
-  info: (title: string, description?: string, action?: ToastAction) =>
-    show('info', title, description, action),
-  success: (title: string, description?: string, action?: ToastAction) =>
-    show('success', title, description, action),
-  error: (title: string, description?: string, action?: ToastAction) =>
-    show('error', title, description, action),
+  info: (title: string, description?: string, opts?: ToastOpts) =>
+    show('info', title, description, opts),
+  success: (title: string, description?: string, opts?: ToastOpts) =>
+    show('success', title, description, opts),
+  error: (title: string, description?: string, opts?: ToastOpts) =>
+    show('error', title, description, opts),
 };
 
 /** Convenience for catch handlers — formats an unknown thrown value

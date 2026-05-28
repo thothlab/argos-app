@@ -84,7 +84,7 @@ export async function startupCrashFlow(): Promise<void> {
         notify.success(
           'Crash reports sent',
           `${r.sent} report${r.sent === 1 ? '' : 's'} submitted${r.failed ? `, ${r.failed} retrying next launch` : ''}.`,
-          { label: 'View what was sent', onClick: () => openCrashLog() },
+          { action: { label: 'View what was sent', onClick: () => openCrashLog() } },
         );
       }
       return;
@@ -127,7 +127,7 @@ export async function applyConsent(
       notify.success(
         'Crash reports sent',
         `Thank you — ${r.sent} report${r.sent === 1 ? '' : 's'} submitted${r.failed ? `, ${r.failed} retrying next launch` : ''}.`,
-        { label: 'View what was sent', onClick: () => openCrashLog() },
+        { action: { label: 'View what was sent', onClick: () => openCrashLog() } },
       );
     }
     if (r.failed > 0 && r.sent === 0) {

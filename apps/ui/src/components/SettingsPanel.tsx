@@ -12,6 +12,7 @@ import { RotateCcw, X } from 'lucide-solid';
 
 import { closeSettings, settingsActiveTab, settingsOpen, setSettingsTab, type SettingsTab } from '../stores/settings-panel';
 import { openCrashLog } from '../stores/crash-log-panel';
+import { checkForUpdatesNow, installPendingUpdate, pendingUpdate } from '../lib/updater';
 import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
@@ -400,8 +401,65 @@ function AdvancedTab() {
     }
   }
 
+  const [checking, setChecking] = createSignal(false);
+  const [installing, setInstalling] = createSignal(false);
+
+  async function doCheck() {
+    setChecking(true);
+    try {
+      await checkForUpdatesNow();
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function doInstall() {
+    setInstalling(true);
+    try {
+      await installPendingUpdate();
+    } finally {
+      // Either we relaunched (this scope is gone) or it failed and the
+      // pending update is still here for retry.
+      setInstalling(false);
+    }
+  }
+
   return (
     <>
+      <SectionHeading>Updates</SectionHeading>
+      <Row
+        label={pendingUpdate() ? `Update available — v${pendingUpdate()!.version}` : 'Up to date'}
+        hint={
+          pendingUpdate()
+            ? 'Download and install the new build. Argos will restart automatically.'
+            : 'Argos checks once per launch. You can also check manually.'
+        }
+      >
+        <Show
+          when={pendingUpdate()}
+          fallback={
+            <button
+              type="button"
+              class="rounded border border-border bg-bg-secondary px-3 py-1.5 text-[12px] hover:bg-border disabled:opacity-50"
+              disabled={checking()}
+              onClick={() => void doCheck()}
+            >
+              {checking() ? 'Checking…' : 'Check for updates'}
+            </button>
+          }
+        >
+          <button
+            type="button"
+            class="rounded bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            disabled={installing()}
+            onClick={() => void doInstall()}
+          >
+            {installing() ? 'Installing…' : 'Install and restart'}
+          </button>
+        </Show>
+      </Row>
+
+      <div class="mt-4 border-t border-border pt-4" />
       <SectionHeading>Backup & restore</SectionHeading>
       <Row label="Export settings" hint="Saves the full settings.json — useful for sharing or backups.">
         <button

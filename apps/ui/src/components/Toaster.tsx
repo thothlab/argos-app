@@ -31,6 +31,9 @@ export function ToastView(props: {
   title: string;
   description?: string;
   action?: { label: string; onClick: () => void };
+  /** Stay visible until the user dismisses — for toasts whose action
+   *  the user needs to find again (e.g. "Install update"). */
+  persistent?: boolean;
 }) {
   const accent =
     props.variant === 'error'
@@ -42,6 +45,7 @@ export function ToastView(props: {
   return (
     <Toast
       toastId={props.toastId}
+      persistent={props.persistent}
       class={`pointer-events-auto flex items-start gap-3 overflow-hidden rounded-md border border-border border-l-4 bg-bg-card px-4 py-3 shadow-lg ${accent}`}
     >
       <div class="min-w-0 flex-1">

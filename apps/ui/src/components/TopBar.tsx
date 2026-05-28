@@ -41,6 +41,7 @@ import {
 } from '../lib/api';
 import { label } from '../lib/hotkeys';
 import { notify, notifyError } from '../lib/toast';
+import { pendingUpdate } from '../lib/updater';
 import CurlImportModal from './CurlImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
 
@@ -88,12 +89,22 @@ function SettingsTrigger() {
   return (
     <button
       type="button"
-      class="flex items-center gap-1.5 rounded-md p-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
-      title={`Settings (${label({ key: ',', meta: true })})`}
+      class="relative flex items-center gap-1.5 rounded-md p-1.5 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+      title={
+        pendingUpdate()
+          ? `Settings — update available (v${pendingUpdate()!.version})`
+          : `Settings (${label({ key: ',', meta: true })})`
+      }
       aria-label="Open settings"
-      onClick={() => openSettings()}
+      onClick={() => openSettings(pendingUpdate() ? 'advanced' : 'appearance')}
     >
       <Settings2 size={16} />
+      <Show when={pendingUpdate()}>
+        <span
+          class="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-primary ring-2 ring-bg-card"
+          aria-hidden
+        />
+      </Show>
     </button>
   );
 }
