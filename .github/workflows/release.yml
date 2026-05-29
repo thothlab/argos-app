@@ -10,7 +10,16 @@ name: release
 #
 # Required secrets:
 #   - TAURI_SIGNING_PRIVATE_KEY      — contents of ~/.argos/keys/argos-updater.key
+#                                      (minisign, drives the in-app updater)
 #   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty for the closed-alpha key
+#   - GPG_PRIVATE_KEY                — armored export of the release-signing key
+#                                      (`gpg --armor --export-secret-keys releases@thothlab.tech`).
+#                                      Detached `.asc` signatures next to the
+#                                      Linux artifacts.
+#   - GPG_PASSPHRASE                 — passphrase of GPG_PRIVATE_KEY
+#   - GPG_KEY_ID                     — long key id (`gpg --list-keys --keyid-format LONG`)
+#   - AUR_SSH_PRIVATE_KEY            — SSH key registered on aur.archlinux.org
+#   - AUR_USERNAME / AUR_EMAIL       — git author for the AUR commit
 #
 # After this workflow finishes, run on the Mac Mini:
 #   make -C apps/web push-manifest FILE=./latest.json
@@ -111,6 +120,63 @@ jobs:
           # /download/{target} route on argos-web relies on that.
           prerelease: false
           args: --target ${{ matrix.platform.rust }}
+
+  # Detached GPG signatures for the Linux artifacts. Users verify
+  # downloads with `gpg --verify Argos_*.AppImage.asc Argos_*.AppImage`
+  # after importing the public key (see /docs/getting-started).
+  #
+  # `.sig` is taken by Tauri's minisign updater chain, so we use `.asc`
+  # to avoid two conflicting signature schemes on the same filename.
+  sign-linux:
+    name: GPG-sign Linux artifacts
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+          echo "use-agent" > ~/.gnupg/gpg.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
+          gpgconf --kill gpg-agent
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format LONG
+      - name: Download Linux artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p sign
+          gh release download "$TAG" --pattern 'Argos*amd64.deb' --pattern 'Argos*x86_64.rpm' --pattern 'Argos*amd64.AppImage' --dir sign
+          ls -la sign
+      - name: Sign and upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd sign
+          for f in Argos*; do
+            # Skip already-signed files in case of a re-run.
+            [ "${f##*.}" = "asc" ] && continue
+            echo "::group::sign $f"
+            gpg --batch --yes --pinentry-mode loopback \
+                --passphrase "$GPG_PASSPHRASE" \
+                --local-user "$GPG_KEY_ID" \
+                --armor --detach-sign \
+                --output "${f}.asc" "$f"
+            gpg --verify "${f}.asc" "$f"
+            gh release upload "$TAG" "${f}.asc" --clobber
+            echo "::endgroup::"
+          done
 
   # After every matrix job has uploaded its bundle + signature, this
   # job downloads the release, builds a single `latest.json` (Tauri's
