@@ -1,8 +1,7 @@
 # Maintainer: Argos Releases <releases@thothlab.tech>
 #
-# Template — `@PKGVER@` and `@SHA256@` placeholders are substituted by
-# .github/workflows/release-aur.yml before this file is pushed to AUR.
-# Edit-by-hand on a release is fine; just keep both placeholders intact.
+# Generated from packaging/aur/argos-bin/PKGBUILD.template by
+# .github/workflows/release-aur.yml on every release: published event.
 
 pkgname=argos-bin
 pkgver=@PKGVER@
