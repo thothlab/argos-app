@@ -21,6 +21,12 @@ const LOGO_PNG: &[u8] = include_bytes!("../../static/logo.png");
 /// for unsigned builds until Developer ID + notarization is set up.
 const INSTALL_MACOS_SH: &str = include_str!("../../static/install-macos.sh");
 
+/// ASCII-armored GPG public key for `Argos Releases
+/// <releases@thothlab.tech>`. Signs the detached `.asc` files next to
+/// every Linux artifact. Served at `/argos-gpg.pub` so users can
+/// `curl … | gpg --import` before verifying their download.
+const ARGOS_GPG_PUB: &str = include_str!("../../static/argos-gpg.pub");
+
 pub async fn index() -> Response {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -47,6 +53,17 @@ pub async fn install_macos() -> Response {
             (header::CACHE_CONTROL, "no-store"),
         ],
         INSTALL_MACOS_SH,
+    )
+        .into_response()
+}
+
+pub async fn argos_gpg_pub() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "application/pgp-keys; charset=utf-8"),
+            (header::CACHE_CONTROL, "public, max-age=86400"),
+        ],
+        ARGOS_GPG_PUB,
     )
         .into_response()
 }
