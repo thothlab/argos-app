@@ -61,6 +61,7 @@ export default defineConfig({
             { label: 'Environments', link: '/reference/environments/' },
             { label: 'Protocols', link: '/reference/protocols/' },
             { label: 'Codegen targets', link: '/reference/codegen/' },
+            { label: 'Desktop app', link: '/reference/app/' },
           ],
         },
       ],
