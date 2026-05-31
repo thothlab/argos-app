@@ -19,6 +19,7 @@ import { createSignal } from 'solid-js';
 
 import { isTauri } from './tauri';
 import { notify, notifyError } from './toast';
+import { settings } from '../stores/settings';
 
 // `tauri-plugin-updater` returns an `Update` object whose handle is
 // opaque from the renderer's point of view. We only ever pass it back
@@ -63,7 +64,13 @@ export async function checkForUpdatesNow(): Promise<void> {
 async function runCheck(opts: { silent: boolean }): Promise<void> {
   try {
     const { check } = await import('@tauri-apps/plugin-updater');
-    const update = await check();
+    // The Tauri plugin-updater URL template doesn't support a
+    // `{{channel}}` placeholder, so we route the release channel
+    // through a header that argos-web reads server-side.
+    const channel = settings().updates.channel;
+    const update = await check({
+      headers: { 'X-Argos-Channel': channel },
+    });
     if (!update) {
       setPending(null);
       if (!opts.silent) notify.success("You're up to date");

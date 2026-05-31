@@ -33,7 +33,8 @@ help:
 	@echo "  make install-launchagent      Mac Mini: register autossh tunnel"
 	@echo "  make uninstall-launchagent    Mac Mini: drop the tunnel"
 	@echo "  make push-caddy               VPS: append Caddyfile snippet"
-	@echo "  make push-manifest FILE=...   VPS-or-Mac: copy a new manifest.json"
+	@echo "  make push-manifest FILE=... [CHANNEL=stable|beta|nightly]"
+	@echo "                                Mac Mini: copy a new manifest into the data volume"
 	@echo "  make deploy-all               build docs, build image, restart container"
 
 # ---- build / test --------------------------------------------------------
@@ -111,11 +112,25 @@ push-caddy: deploy/Caddyfile.snippet
 # Copy a new manifest.json (typically produced by `cargo tauri build` or
 # `tauri-action` in CI) into the data volume. Usage:
 #   make push-manifest FILE=./manifest.json
+#   make push-manifest FILE=./manifest.json CHANNEL=beta
+#   make push-manifest FILE=./manifest.json CHANNEL=nightly
+#
+# CHANNEL picks the destination filename inside the container:
+#   stable (default) → manifest.json
+#   beta              → manifest-beta.json
+#   nightly           → manifest-nightly.json
+#
+# The route /api/update/{target}/{current} reads the file matching the
+# X-Argos-Channel header the client sends; this layout lets you stage
+# a new build for beta testers without touching stable users.
+CHANNEL ?= stable
 push-manifest:
-	@test -n "$(FILE)" || (echo "Usage: make push-manifest FILE=./manifest.json"; exit 1)
+	@test -n "$(FILE)" || (echo "Usage: make push-manifest FILE=./manifest.json [CHANNEL=stable|beta|nightly]"; exit 1)
+	@case "$(CHANNEL)" in stable|beta|nightly) ;; *) echo "CHANNEL must be one of: stable, beta, nightly"; exit 1 ;; esac
 	@docker compose ps -q argos-web > /dev/null 2>&1 || (echo "container not running"; exit 1)
-	docker compose cp $(FILE) argos-web:/var/lib/argos-web/manifest.json
-	@echo "✓ manifest copied into argos-web-data volume"
+	$(eval _DEST := $(if $(filter stable,$(CHANNEL)),manifest.json,manifest-$(CHANNEL).json))
+	docker compose cp $(FILE) argos-web:/var/lib/argos-web/$(_DEST)
+	@echo "✓ manifest copied into argos-web-data volume as $(_DEST)"
 
 # ---- end-to-end ----------------------------------------------------------
 

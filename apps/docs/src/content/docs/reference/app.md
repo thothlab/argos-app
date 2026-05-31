@@ -135,6 +135,27 @@ The manifest is a single source of truth shared with the download links
 on the landing page, so the "Check for updates" result and the website
 download bundle are always the same version.
 
+### Release channels
+
+**Settings → Advanced → Updates → Release channel** picks which
+build stream Argos follows:
+
+- **Stable** (default) — only signed-off releases. What new users
+  download from the landing page.
+- **Beta** — RC-quality builds, run ~1 release ahead of stable so
+  early feedback can land before a stable cut.
+- **Nightly** — main-branch builds. Fastest signal on new work,
+  highest chance of rough edges.
+
+The channel is sent as an `X-Argos-Channel` header to
+`https://argos.thothlab.tech/api/update/…` — no separate domain or
+URL prefix. Switching channels takes effect on the next launch's
+update check (or the next manual **Check for updates**).
+
+Switching from beta back to stable is a no-op until the next stable
+release at or above your current version: the updater never offers
+*downgrades* even when it sees a lower stable build.
+
 ## Crash reporter
 
 If the desktop app panics, the next launch shows an opt-in modal listing

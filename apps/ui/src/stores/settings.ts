@@ -16,6 +16,9 @@ import { clearKey, loadJSON } from '../lib/persist';
 
 export type Theme = 'light' | 'dark' | 'system';
 export type EditorThemeMode = 'follow-app' | 'one-dark';
+export type ReleaseChannel = 'stable' | 'beta' | 'nightly';
+
+export const RELEASE_CHANNELS: ReleaseChannel[] = ['stable', 'beta', 'nightly'];
 
 export type Settings = {
   appearance: {
@@ -26,6 +29,14 @@ export type Settings = {
     tabSize: number;
     lineWrapping: boolean;
     theme: EditorThemeMode;
+  };
+  updates: {
+    /**
+     * Release channel the auto-updater queries. Sent to argos-web as
+     * the `X-Argos-Channel` header — `stable` (or missing) reads
+     * the default manifest, `beta` / `nightly` read separate files.
+     */
+    channel: ReleaseChannel;
   };
   /**
    * actionId → combo string (e.g. "Mod+K"), or `null` to explicitly disable
@@ -47,6 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
     lineWrapping: true,
     theme: 'follow-app',
   },
+  updates: { channel: 'stable' },
   keybindings: {},
 };
 
@@ -94,6 +106,16 @@ export function mergeWithDefaults(raw: unknown): Settings {
     }
     if (editor.theme === 'follow-app' || editor.theme === 'one-dark') {
       out.editor.theme = editor.theme;
+    }
+  }
+  const updates = raw.updates;
+  if (isObject(updates)) {
+    if (
+      updates.channel === 'stable' ||
+      updates.channel === 'beta' ||
+      updates.channel === 'nightly'
+    ) {
+      out.updates.channel = updates.channel;
     }
   }
   const kb = raw.keybindings;
@@ -176,6 +198,12 @@ export function setEditorLineWrapping(on: boolean): void {
 export function setEditorTheme(t: EditorThemeMode): void {
   updateSettings((s) => {
     s.editor.theme = t;
+  });
+}
+
+export function setReleaseChannel(c: ReleaseChannel): void {
+  updateSettings((s) => {
+    s.updates.channel = c;
   });
 }
 

@@ -17,6 +17,7 @@ import {
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  RELEASE_CHANNELS,
   TAB_SIZES,
   mergeWithDefaults,
   replaceAllSettings,
@@ -26,9 +27,11 @@ import {
   setEditorTabSize,
   setEditorTheme,
   setKeybinding,
+  setReleaseChannel,
   setTheme,
   settings,
   type EditorThemeMode,
+  type ReleaseChannel,
   type Settings,
   type Theme,
 } from '../stores/settings';
@@ -427,6 +430,19 @@ function AdvancedTab() {
   return (
     <>
       <SectionHeading>Updates</SectionHeading>
+      <Row
+        label="Release channel"
+        hint="Beta + nightly run ahead of stable; expect more rough edges."
+      >
+        <Segmented<ReleaseChannel>
+          value={settings().updates.channel}
+          options={RELEASE_CHANNELS.map((c) => ({
+            value: c,
+            label: c === 'stable' ? 'Stable' : c === 'beta' ? 'Beta' : 'Nightly',
+          }))}
+          onChange={setReleaseChannel}
+        />
+      </Row>
       <Row
         label={pendingUpdate() ? `Update available — v${pendingUpdate()!.version}` : 'Up to date'}
         hint={
