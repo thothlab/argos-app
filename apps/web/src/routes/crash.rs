@@ -287,8 +287,8 @@ mod tests {
             "os": "macos aarch64",
             "ts": "2026-06-01T08:00:00Z",
             "panic": {
-                "message": "request failed at /Users/shaukat/proj/x.rs with Authorization: Bearer ABCDEF123 and api_key=topSecret",
-                "location": "/Users/shaukat/.cargo/registry/src/foo-1.0/src/lib.rs:99",
+                "message": "request failed at /Users/alice/proj/x.rs with Authorization: Bearer ABCDEF123 and api_key=topSecret",
+                "location": "/Users/alice/.cargo/registry/src/foo-1.0/src/lib.rs:99",
             }
         }))
         .unwrap();
@@ -309,12 +309,12 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&stored).unwrap();
         let msg = parsed["panic"]["message"].as_str().unwrap();
         let loc = parsed["panic"]["location"].as_str().unwrap();
-        assert!(!msg.contains("shaukat"));
+        assert!(!msg.contains("alice"));
         assert!(!msg.contains("Bearer ABCDEF123"));
         assert!(!msg.contains("topSecret"));
         assert!(msg.contains("Bearer <redacted>"));
         assert!(msg.contains("api_key=<redacted>"));
-        assert!(!loc.contains("shaukat"));
+        assert!(!loc.contains("alice"));
         assert!(loc.starts_with("/Users/<user>/.cargo"));
     }
 

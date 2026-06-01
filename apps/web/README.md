@@ -3,9 +3,10 @@
 The thing behind `argos.thothlab.tech`: landing page, Tauri update
 manifest, and crash collection endpoint. Single Rust binary
 (`axum` + `tower-http::ServeDir`), single Docker container, hosted on
-the home Mac Mini, exposed through the existing
-[self-hosted-tunnel](https://github.com/thothlab/self-hosted-tunnel)
-infrastructure.
+a Mac Mini behind NAT and exposed through a reverse SSH tunnel to a
+small public-IP VPS (Caddy on the VPS terminates TLS and proxies to
+the tunnel). The same pattern works with any reverse-tunnel setup —
+`autossh`, `frp`, Cloudflare Tunnel — pick what you have.
 
 ## Routes
 
@@ -45,11 +46,13 @@ the deploy section below.
 
 ### Prerequisites (one-off)
 
-1. **DNS**: A record `argos.thothlab.tech` → `153.80.185.242`.
-2. **SSH alias** `vps` configured (set up by `self-hosted-tunnel/setup-laptop.sh`).
+1. **DNS**: A record for your domain → your VPS IP.
+2. **SSH alias** `vps` configured in `~/.ssh/config` (the Makefile
+   defaults assume one — override with `VPS_HOST=...` if your alias
+   differs).
 3. **autossh** installed on the Mac Mini (`brew install autossh`).
-4. **tunnel key** present at `~/.ssh/id_ed25519_tunnel` (same one the
-   existing tunnels use).
+4. **tunnel key** present at `~/.ssh/id_ed25519_tunnel` (override
+   with `TUNNEL_KEY=...` to point at a different key).
 
 ### Steps
 

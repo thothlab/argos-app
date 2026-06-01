@@ -6,8 +6,15 @@
 # ~/.ssh/config (see self-hosted-tunnel/setup-laptop.sh).
 
 PORT ?= 8743
+# `vps` is a host alias in ~/.ssh/config — override with VPS_HOST=...
+# if yours is named differently, or use the bare IP / hostname.
 VPS_HOST ?= vps
-VPS_IP ?= 153.80.185.242
+# VPS_IP is only used by `install-launchagent` to verify the tunnel
+# port is reachable from the VPS side after autossh comes up.
+# Override with VPS_IP=... — defaults to the alias above, resolved
+# via ssh -G if you want, but the static fallback below keeps the
+# default flow `make install-launchagent` from prompting.
+VPS_IP ?= 203.0.113.10
 TUNNEL_KEY ?= $(HOME)/.ssh/id_ed25519_tunnel
 AUTOSSH_BIN ?= /opt/homebrew/bin/autossh
 LAUNCH_PLIST := $(HOME)/Library/LaunchAgents/com.argos.tunnel.plist

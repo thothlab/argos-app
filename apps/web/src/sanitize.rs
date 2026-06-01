@@ -71,9 +71,9 @@ mod tests {
 
     #[test]
     fn macos_home_path_is_anonymised() {
-        let r = redact("at /Users/shaukat/Documents/foo/bar.rs:42");
+        let r = redact("at /Users/alice/Documents/foo/bar.rs:42");
         assert!(r.contains("/Users/<user>/Documents/foo/bar.rs:42"));
-        assert!(!r.contains("shaukat"));
+        assert!(!r.contains("alice"));
     }
 
     #[test]
@@ -132,9 +132,9 @@ mod tests {
 
     #[test]
     fn multiple_pii_items_all_redacted() {
-        let msg = "panic at /Users/shaukat/x.rs with Authorization: Bearer XYZ and api_key=ABC";
+        let msg = "panic at /Users/alice/x.rs with Authorization: Bearer XYZ and api_key=ABC";
         let r = redact(msg);
-        assert!(!r.contains("shaukat"));
+        assert!(!r.contains("alice"));
         assert!(!r.contains("Bearer XYZ"));
         assert!(!r.contains("ABC"));
     }
@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn redact_is_idempotent() {
-        let once = redact("at /Users/shaukat/x.rs with Bearer ABC");
+        let once = redact("at /Users/alice/x.rs with Bearer ABC");
         let twice = redact(&once);
         assert_eq!(once, twice);
     }
