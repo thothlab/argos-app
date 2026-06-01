@@ -152,7 +152,7 @@ function CurlImportControl() {
               class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
               onSelect={() => void importOpenApiFlow()}
             >
-              <span>From OpenAPI 3.x (JSON / YAML)…</span>
+              <span>From OpenAPI / Swagger (JSON / YAML)…</span>
             </DropdownMenu.Item>
             <div class="my-1 h-px bg-border" />
             <DropdownMenu.Item
@@ -187,7 +187,7 @@ async function importInsomniaFlow(): Promise<void> {
 
 async function importOpenApiFlow(): Promise<void> {
   await runImportFlow({
-    pickerLabel: 'OpenAPI 3.x document',
+    pickerLabel: 'OpenAPI 3.x / Swagger 2.0 document',
     pickerExtensions: ['json', 'yaml', 'yml'],
     importer: openapiImport,
   });

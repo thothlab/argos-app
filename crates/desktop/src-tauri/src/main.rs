@@ -590,6 +590,11 @@ fn sniff_format(head: &str, path: &Path) -> &'static str {
         if head.contains("\"openapi\"") && head.contains("\"3.") {
             return "openapi";
         }
+        // Swagger 2.0 is accepted by the openapi importer — match the
+        // discriminator and route there.
+        if head.contains("\"swagger\"") && head.contains("\"2.0\"") {
+            return "openapi";
+        }
         // Last-ditch: a full parse if the prefix landed; tolerate
         // partial reads by parsing the head into Value::Null on
         // failure.
@@ -610,12 +615,15 @@ fn sniff_format(head: &str, path: &Path) -> &'static str {
             {
                 return "openapi";
             }
+            if v.get("swagger").and_then(|o| o.as_str()) == Some("2.0") {
+                return "openapi";
+            }
         }
     }
 
     if matches!(ext.as_deref(), Some("yaml") | Some("yml")) {
         // Trivial YAML sniff — first non-blank, non-comment line that
-        // starts with `openapi:` followed by `3.`.
+        // starts with `openapi:` followed by `3.` or `swagger:` "2.0".
         for line in head.lines() {
             let l = line.trim();
             if l.is_empty() || l.starts_with('#') {
@@ -627,13 +635,23 @@ fn sniff_format(head: &str, path: &Path) -> &'static str {
                     return "openapi";
                 }
             }
-            // Don't keep scanning the whole head — OpenAPI puts the
-            // version at the top.
+            if let Some(rest) = l.strip_prefix("swagger:") {
+                let v = rest.trim().trim_matches(|c: char| c == '"' || c == '\'');
+                if v == "2.0" {
+                    return "openapi";
+                }
+            }
+            // Don't keep scanning the whole head — OpenAPI / Swagger
+            // puts the version at the top.
             break;
         }
-        // Some specs lead with `info:` or comments before `openapi:`;
-        // fall back to a substring sniff before giving up.
-        if head.contains("openapi: 3.") || head.contains("openapi: \"3.") {
+        // Some specs lead with `info:` or comments before the
+        // discriminator; fall back to a substring sniff before giving up.
+        if head.contains("openapi: 3.")
+            || head.contains("openapi: \"3.")
+            || head.contains("swagger: \"2.0\"")
+            || head.contains("swagger: '2.0'")
+        {
             return "openapi";
         }
     }
@@ -1915,6 +1933,18 @@ mod tests {
     fn sniffs_openapi_yaml_quoted_version() {
         let head = "openapi: \"3.1.0\"\n";
         assert_eq!(sniff_format(head, Path::new("x.yml")), "openapi");
+    }
+
+    #[test]
+    fn sniffs_swagger_2_json() {
+        let head = r#"{ "swagger": "2.0", "info": {} }"#;
+        assert_eq!(sniff_format(head, Path::new("x.json")), "openapi");
+    }
+
+    #[test]
+    fn sniffs_swagger_2_yaml() {
+        let head = "swagger: \"2.0\"\ninfo:\n  title: x\n";
+        assert_eq!(sniff_format(head, Path::new("x.yaml")), "openapi");
     }
 
     #[test]

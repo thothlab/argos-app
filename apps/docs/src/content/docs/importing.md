@@ -1,6 +1,6 @@
 ---
 title: Importing collections
-description: Bring Postman, Insomnia, Bruno, OpenAPI, or curl into an Argos workspace.
+description: Bring Postman, Insomnia, Bruno, OpenAPI / Swagger, or curl into an Argos workspace.
 ---
 
 Argos imports every common collection format directly into the workspace as
@@ -12,6 +12,7 @@ native YAML — no proprietary database, no lock-in.
 | **Insomnia**        | v4 export JSON          | Workspaces, requests, env vars; gRPC entries skipped.              |
 | **Bruno**           | `.bru` collection dir   | Folders mirrored 1:1; `meta`/`auth` blocks preserved.              |
 | **OpenAPI 3.0/3.1** | JSON or YAML spec       | One request per `paths.{path}.{method}`; folders by `tags[0]`.     |
+| **Swagger 2.0**     | JSON or YAML spec       | Converted to 3.0 shape in-memory: `host`+`basePath`+`schemes` → `servers`, body / formData params → `requestBody`, `definitions` → `components.schemas`. |
 | **cURL**            | `curl …` shell command  | Paste from devtools / docs; multi-line `\` continuations accepted. |
 
 ## Drag and drop
@@ -26,7 +27,7 @@ Detection rules:
 - A directory containing `bruno.json` → **Bruno**.
 - A file whose first ~64 KB JSON parses with `info.schema` containing `"v2.1"` → **Postman**.
 - `"_type":"export"` or `"__export_format"` → **Insomnia**.
-- `"openapi":"3.x"` (JSON) or `openapi: 3.x` (YAML) → **OpenAPI**.
+- `"openapi":"3.x"` or `"swagger":"2.0"` (JSON), `openapi: 3.x` or `swagger: "2.0"` (YAML) → **OpenAPI / Swagger**.
 - Anything else → an error toast pointing you at the explicit **File → Import**
   menu.
 
@@ -42,7 +43,7 @@ For URLs, clipboard cURL, or when the auto-detection trips up:
 - **File → Import → From Postman v2.1 (JSON)…**
 - **File → Import → From Insomnia v4 (JSON)…**
 - **File → Import → From Bruno collection (folder)…**
-- **File → Import → From OpenAPI 3.x (JSON / YAML)…**
+- **File → Import → From OpenAPI / Swagger (JSON / YAML)…** — handles both OpenAPI 3.x and Swagger 2.0.
 
 Each opens a system file picker and runs the importer. Counts of requests +
 folders + variables land in a toast on success.
@@ -86,6 +87,33 @@ When importing an OpenAPI 3.x document:
 - `security` + `components.securitySchemes` map to Argos auth types: `http`
   bearer → Bearer; `http` basic → Basic; `apiKey` → ApiKey (header / query /
   cookie). OAuth2 and OIDC are deferred to a future revision.
+
+### Swagger 2.0 specifics
+
+Swagger 2.0 documents (`swagger: "2.0"`) are accepted by the same
+importer — the parser rewrites the document to a 3.0 shape in memory
+before the rest of the logic runs. What's rewritten:
+
+| Swagger 2.0                                       | OpenAPI 3.0 equivalent                                             |
+| ------------------------------------------------- | ------------------------------------------------------------------ |
+| `host`, `basePath`, `schemes[0]`                  | `servers[0].url = "{scheme}://{host}{basePath}"`                   |
+| `definitions`                                     | `components.schemas`                                               |
+| Root `parameters` / `responses`                   | `components.parameters` / `components.responses`                   |
+| `securityDefinitions`                             | `components.securitySchemes` (with `type: basic` → `type: http, scheme: basic`) |
+| Per-operation `parameters[in: body]`              | `requestBody.content["application/json"]` (or `consumes[0]`)       |
+| Per-operation `parameters[in: formData]`          | `requestBody.content["application/x-www-form-urlencoded"]` schema  |
+| `$ref: "#/definitions/X"`                         | `$ref: "#/components/schemas/X"` (similar for parameters / responses / securityDefinitions) |
+| `consumes` / `produces` (op-level or root)        | media types on the matching `requestBody` / `responses.*` content  |
+
+OAuth2 flow shape differs between versions; we emit a stub
+`components.securitySchemes.<name>.flows.<mapped-flow>` so the field
+exists, but the OpenAPI auth walker treats unknown OAuth2 detail as a
+description note either way.
+
+File uploads in `parameters: [{in: formData, type: file}]` become
+`{type: string, format: binary}` in the schema — generators can at
+least produce a placeholder field; full multipart support is on the
+roadmap.
 
 ## Exporting
 

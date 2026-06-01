@@ -147,9 +147,11 @@ export async function brunoImport(
   });
 }
 
-/** Import an OpenAPI 3.x document (JSON or YAML) into the workspace.
- *  `source` is a path on disk; pass `inline = true` to send the raw
- *  document text instead. */
+/** Import an OpenAPI 3.x or Swagger 2.0 document (JSON or YAML) into
+ *  the workspace. `source` is a path on disk; pass `inline = true` to
+ *  send the raw document text instead. Swagger 2.0 documents are
+ *  converted to a 3.0 shape in-memory by the Rust importer before the
+ *  rest of the parsing runs. */
 export async function openapiImport(
   workspaceRoot: string,
   source: string,

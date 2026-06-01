@@ -1,11 +1,19 @@
-//! OpenAPI 3.x (3.0 and 3.1) importer.
+//! OpenAPI / Swagger importer (Swagger 2.0, OpenAPI 3.0, OpenAPI 3.1).
 //!
 //! Matches the strategy of `postman.rs` — we walk the spec via
 //! [`serde_json::Value`] instead of pulling a typed crate. The OpenAPI
 //! schema is huge and full of optional fields; a hand-rolled walker
-//! handles both 3.0 and 3.1 with the same code and skips bits we don't
+//! handles 3.0 and 3.1 with the same code and skips bits we don't
 //! understand. Input may be JSON *or* YAML — we try JSON first and
 //! fall back to YAML.
+//!
+//! **Swagger 2.0** (`swagger: "2.0"`) is accepted via an in-memory
+//! rewrite into 3.0 shape — see [`swagger_2_to_oas3`]. The conversion
+//! covers what matters for request reproduction: host / basePath /
+//! schemes → servers, body / formData parameters → `requestBody`,
+//! definitions → `components.schemas`, securityDefinitions →
+//! `components.securitySchemes`, and `$ref` paths. Anything we don't
+//! understand is left alone for the 3.x walker to ignore.
 //!
 //! Mapping:
 //!   - `servers[0].url` → URL prefix (paths join onto it).
@@ -44,28 +52,52 @@ pub enum OpenApiImportError {
     /// Input is neither valid JSON nor valid YAML.
     #[error("invalid OpenAPI document: {0}")]
     InvalidDocument(String),
-    /// Top-level shape doesn't look like an OpenAPI 3.x spec.
-    #[error("not an OpenAPI 3.x document (missing or unsupported `openapi` field; got {0:?})")]
+    /// Top-level shape doesn't look like an OpenAPI / Swagger spec we
+    /// support. Carries whatever we saw in `openapi` / `swagger` for
+    /// diagnostic display.
+    #[error("not an OpenAPI 3.x or Swagger 2.0 document (got {0:?})")]
     NotOpenApi3(String),
 }
 
-/// Parse an OpenAPI 3.x document (JSON or YAML) into an
+/// Parse an OpenAPI 3.x or Swagger 2.0 document (JSON or YAML) into an
 /// [`ImportedCollection`]. JSON is tried first; on parse failure we
-/// fall back to YAML.
+/// fall back to YAML. Swagger 2.0 documents are converted to a 3.0
+/// shape in memory before the rest of the walker runs — see
+/// [`swagger_2_to_oas3`] for the rewrite rules.
 ///
 /// # Errors
 ///
 /// [`OpenApiImportError::InvalidDocument`] if neither parser accepts
-/// the input; [`OpenApiImportError::NotOpenApi3`] if the `openapi`
-/// version isn't `3.x`.
+/// the input; [`OpenApiImportError::NotOpenApi3`] if the version
+/// discriminator doesn't match a supported spec.
 pub fn from_str(input: &str) -> Result<ImportedCollection, OpenApiImportError> {
-    let spec: Value = parse_any(input)?;
+    let mut spec: Value = parse_any(input)?;
+
+    // Swagger 2.0 path: rewrite the document shape before the rest of
+    // the walker sees it. After this call the document carries
+    // `openapi: "3.0.3"` and the `paths` / `components` structure the
+    // 3.x branch already understands.
+    if spec.get("swagger").and_then(Value::as_str) == Some("2.0") {
+        spec = swagger_2_to_oas3(spec);
+    }
+
     let version = spec
         .get("openapi")
         .and_then(Value::as_str)
         .unwrap_or_default();
     if !version.starts_with("3.") {
-        return Err(OpenApiImportError::NotOpenApi3(version.to_string()));
+        // Surface whatever discriminator the document carried — helps
+        // users figure out why their file was rejected (e.g. swagger
+        // 1.2, OpenAPI 4.x, or a totally unrelated JSON).
+        let seen = if version.is_empty() {
+            spec.get("swagger")
+                .and_then(Value::as_str)
+                .unwrap_or("<no version field>")
+                .to_string()
+        } else {
+            version.to_string()
+        };
+        return Err(OpenApiImportError::NotOpenApi3(seen));
     }
 
     let info = spec.get("info").and_then(Value::as_object);
@@ -610,6 +642,333 @@ fn resolve_ref(spec: &Value, node: &Value) -> Value {
     cur.clone()
 }
 
+// ---- Swagger 2.0 → OpenAPI 3.0 in-memory rewrite ------------------------
+
+/// Rewrite a Swagger 2.0 document into an OpenAPI 3.0 shape. The result
+/// is what the rest of this module (built for 3.x) can consume without
+/// further changes.
+///
+/// What gets rewritten:
+///   - `swagger: "2.0"` → `openapi: "3.0.3"`.
+///   - `host` + `basePath` + `schemes[0]` → `servers[0].url`.
+///   - `definitions` → `components.schemas`.
+///   - top-level `parameters` → `components.parameters`.
+///   - top-level `responses` → `components.responses`.
+///   - `securityDefinitions` → `components.securitySchemes`
+///     (with the 2.0 `type: basic` → `type: http, scheme: basic` patch).
+///   - Per-operation parameters with `in: body` → `requestBody`,
+///     with `in: formData` → `requestBody` using
+///     `application/x-www-form-urlencoded`.
+///   - All `$ref` strings re-prefixed from `#/definitions/...` etc.
+///     to `#/components/...`.
+///
+/// What stays unchanged:
+///   - Operation `parameters` with `in: path / query / header` —
+///     identical shape between 2.0 and 3.0.
+///   - `tags`, `paths` keys, response status codes.
+///   - `security` lists — name lookup against the now-migrated
+///     `components.securitySchemes` works transparently.
+fn swagger_2_to_oas3(mut doc: Value) -> Value {
+    let consumes_root: Vec<String> = doc
+        .get("consumes")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // ---- 1. discriminator + servers ----
+    if let Some(obj) = doc.as_object_mut() {
+        obj.remove("swagger");
+        obj.insert("openapi".into(), Value::String("3.0.3".into()));
+
+        let host = obj
+            .get("host")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let base_path = obj
+            .get("basePath")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let scheme = obj
+            .get("schemes")
+            .and_then(Value::as_array)
+            .and_then(|a| a.first())
+            .and_then(Value::as_str)
+            .unwrap_or("https")
+            .to_string();
+        obj.remove("host");
+        obj.remove("basePath");
+        obj.remove("schemes");
+        if !host.is_empty() {
+            let url = format!("{scheme}://{host}{base_path}");
+            obj.insert(
+                "servers".into(),
+                Value::Array(vec![serde_json::json!({ "url": url })]),
+            );
+        }
+
+        // ---- 2. definitions / parameters / responses → components.* ----
+        let mut components = obj
+            .remove("components")
+            .and_then(|c| {
+                if c.is_object() {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| Value::Object(Default::default()));
+        let comp_obj = components.as_object_mut().expect("components is object");
+
+        if let Some(defs) = obj.remove("definitions") {
+            comp_obj.insert("schemas".into(), defs);
+        }
+        if let Some(params) = obj.remove("parameters") {
+            comp_obj.insert("parameters".into(), params);
+        }
+        if let Some(responses) = obj.remove("responses") {
+            comp_obj.insert("responses".into(), responses);
+        }
+        if let Some(sd) = obj.remove("securityDefinitions") {
+            comp_obj.insert("securitySchemes".into(), convert_security_definitions(sd));
+        }
+        if !comp_obj.is_empty() {
+            obj.insert("components".into(), components);
+        }
+    }
+
+    // ---- 3. rewrite $ref strings everywhere ----
+    rewrite_refs(&mut doc);
+
+    // ---- 4. per-operation body / formData → requestBody ----
+    convert_operations(&mut doc, &consumes_root);
+
+    doc
+}
+
+fn convert_security_definitions(sd: Value) -> Value {
+    let Some(obj) = sd.as_object() else {
+        return sd;
+    };
+    let mut out = serde_json::Map::new();
+    for (name, scheme) in obj {
+        let Some(s) = scheme.as_object() else {
+            continue;
+        };
+        let typ = s.get("type").and_then(Value::as_str).unwrap_or("");
+        let converted = match typ {
+            // `basic` in 2.0 → `http` with `scheme: basic` in 3.0.
+            "basic" => serde_json::json!({
+                "type": "http",
+                "scheme": "basic",
+                "description": s.get("description").cloned().unwrap_or(Value::Null),
+            }),
+            // apiKey shape is identical (type, name, in).
+            "apiKey" => Value::Object(s.clone()),
+            // oauth2: the flow shape changed substantially; emit a
+            // 3.0-shaped stub so the field at least exists. The
+            // OpenAPI walker treats unknown oauth2 details as a
+            // best-effort note anyway.
+            "oauth2" => {
+                let flow = s.get("flow").and_then(Value::as_str).unwrap_or("implicit");
+                let flow_key = match flow {
+                    "implicit" => "implicit",
+                    "password" => "password",
+                    "application" => "clientCredentials",
+                    "accessCode" => "authorizationCode",
+                    _ => "implicit",
+                };
+                let mut flow_obj = serde_json::Map::new();
+                if let Some(url) = s.get("authorizationUrl") {
+                    flow_obj.insert("authorizationUrl".into(), url.clone());
+                }
+                if let Some(url) = s.get("tokenUrl") {
+                    flow_obj.insert("tokenUrl".into(), url.clone());
+                }
+                flow_obj.insert(
+                    "scopes".into(),
+                    s.get("scopes").cloned().unwrap_or_else(|| serde_json::json!({})),
+                );
+                serde_json::json!({
+                    "type": "oauth2",
+                    "flows": { flow_key: Value::Object(flow_obj) },
+                })
+            }
+            _ => Value::Object(s.clone()),
+        };
+        out.insert(name.clone(), converted);
+    }
+    Value::Object(out)
+}
+
+/// Walk the JSON tree mutating every `$ref` string from a 2.0 path to
+/// the matching 3.0 component path.
+fn rewrite_refs(node: &mut Value) {
+    match node {
+        Value::Object(obj) => {
+            for (k, v) in obj.iter_mut() {
+                if k == "$ref" {
+                    if let Value::String(s) = v {
+                        if let Some(rest) = s.strip_prefix("#/definitions/") {
+                            *s = format!("#/components/schemas/{rest}");
+                        } else if let Some(rest) = s.strip_prefix("#/parameters/") {
+                            *s = format!("#/components/parameters/{rest}");
+                        } else if let Some(rest) = s.strip_prefix("#/responses/") {
+                            *s = format!("#/components/responses/{rest}");
+                        } else if let Some(rest) = s.strip_prefix("#/securityDefinitions/") {
+                            *s = format!("#/components/securitySchemes/{rest}");
+                        }
+                    }
+                } else {
+                    rewrite_refs(v);
+                }
+            }
+        }
+        Value::Array(arr) => arr.iter_mut().for_each(rewrite_refs),
+        _ => {}
+    }
+}
+
+/// Walk every operation in `paths.*` and rewrite body / formData
+/// parameters into a 3.0-shaped `requestBody`.
+fn convert_operations(doc: &mut Value, consumes_root: &[String]) {
+    let Some(paths) = doc.get_mut("paths").and_then(Value::as_object_mut) else {
+        return;
+    };
+    for (_path, path_item) in paths.iter_mut() {
+        let Some(path_obj) = path_item.as_object_mut() else {
+            continue;
+        };
+        for (key, op) in path_obj.iter_mut() {
+            // Skip non-operation keys (parameters, x-extensions, etc).
+            if !matches!(
+                key.as_str(),
+                "get" | "post" | "put" | "patch" | "delete" | "head" | "options" | "trace"
+            ) {
+                continue;
+            }
+            convert_one_operation(op, consumes_root);
+        }
+    }
+}
+
+fn convert_one_operation(op: &mut Value, consumes_root: &[String]) {
+    let Some(op_obj) = op.as_object_mut() else {
+        return;
+    };
+    let Some(params_val) = op_obj.remove("parameters") else {
+        return;
+    };
+    let Some(params) = params_val.as_array() else {
+        op_obj.insert("parameters".into(), params_val);
+        return;
+    };
+
+    let mut kept: Vec<Value> = Vec::new();
+    let mut body_param: Option<Value> = None;
+    let mut form_params: Vec<Value> = Vec::new();
+    for p in params {
+        match p.get("in").and_then(Value::as_str) {
+            Some("body") => body_param = Some(p.clone()),
+            Some("formData") => form_params.push(p.clone()),
+            _ => kept.push(p.clone()),
+        }
+    }
+    if !kept.is_empty() {
+        op_obj.insert("parameters".into(), Value::Array(kept));
+    }
+
+    // The operation's effective consumes list: per-op `consumes`
+    // overrides the document-wide one (this is the 2.0 inheritance
+    // rule); fall back to a sensible default per body kind.
+    let consumes_op: Vec<String> = op_obj
+        .get("consumes")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    op_obj.remove("consumes");
+
+    if let Some(body) = body_param {
+        let media_type = first_or(&consumes_op, consumes_root, "application/json");
+        let schema = body
+            .get("schema")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let required = body.get("required").cloned().unwrap_or(Value::Bool(true));
+        let description = body.get("description").cloned();
+        let mut rb = serde_json::json!({
+            "required": required,
+            "content": { media_type: { "schema": schema } },
+        });
+        if let Some(d) = description {
+            rb["description"] = d;
+        }
+        op_obj.insert("requestBody".into(), rb);
+    } else if !form_params.is_empty() {
+        let media_type = first_or(
+            &consumes_op,
+            consumes_root,
+            "application/x-www-form-urlencoded",
+        );
+        let mut props = serde_json::Map::new();
+        let mut required: Vec<Value> = Vec::new();
+        for p in &form_params {
+            let Some(name) = p.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            // Translate the inline 2.0 parameter type / format /
+            // enum / items into a small property schema. We don't
+            // try to fully model files (`type: file`) — they become
+            // `type: string, format: binary` so generators at least
+            // produce something usable.
+            let mut prop = serde_json::Map::new();
+            for k in ["type", "format", "enum", "items", "description", "default"] {
+                if let Some(v) = p.get(k) {
+                    prop.insert(k.into(), v.clone());
+                }
+            }
+            if prop.get("type").and_then(Value::as_str) == Some("file") {
+                prop.insert("type".into(), Value::String("string".into()));
+                prop.insert("format".into(), Value::String("binary".into()));
+            }
+            props.insert(name.into(), Value::Object(prop));
+            if p.get("required").and_then(Value::as_bool) == Some(true) {
+                required.push(Value::String(name.into()));
+            }
+        }
+        let mut schema = serde_json::json!({
+            "type": "object",
+            "properties": Value::Object(props),
+        });
+        if !required.is_empty() {
+            schema["required"] = Value::Array(required);
+        }
+        op_obj.insert(
+            "requestBody".into(),
+            serde_json::json!({
+                "content": { media_type: { "schema": schema } },
+            }),
+        );
+    }
+}
+
+fn first_or(primary: &[String], fallback: &[String], default_value: &str) -> String {
+    primary
+        .first()
+        .or_else(|| fallback.first())
+        .cloned()
+        .unwrap_or_else(|| default_value.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -634,7 +993,13 @@ mod tests {
 
     #[test]
     fn rejects_non_openapi() {
-        let err = from_str(&json!({ "swagger": "2.0", "info": {"title":"x"} }).to_string())
+        // 1.x is too old (we don't try to rewrite it); 4.x is too new
+        // (no such spec exists yet, but if it ever does we'd want to
+        // bail rather than silently mis-parse).
+        let err = from_str(&json!({ "swagger": "1.2", "info": {"title":"x"} }).to_string())
+            .unwrap_err();
+        assert!(matches!(err, OpenApiImportError::NotOpenApi3(_)));
+        let err = from_str(&json!({ "openapi": "4.0.0", "info": {"title":"x"} }).to_string())
             .unwrap_err();
         assert!(matches!(err, OpenApiImportError::NotOpenApi3(_)));
     }
@@ -1090,5 +1455,183 @@ mod tests {
         let rest = first_request(&c);
         // We mostly care that the stub generated *without crashing*.
         assert!(matches!(rest.body, Some(BodyDraft::Json { .. })));
+    }
+
+    // ---- Swagger 2.0 tests --------------------------------------------------
+
+    #[test]
+    fn swagger_2_minimal_round_trips_to_oas3() {
+        // host + basePath + schemes → servers[0].url; a single GET
+        // with one query parameter; tag → folder; baseUrl variable.
+        let s = json!({
+            "swagger": "2.0",
+            "info": { "title": "Petstore", "version": "1.0" },
+            "host": "petstore.swagger.io",
+            "basePath": "/v2",
+            "schemes": ["https"],
+            "paths": {
+                "/pet/findByStatus": {
+                    "get": {
+                        "tags": ["pet"],
+                        "operationId": "findByStatus",
+                        "parameters": [
+                            { "name": "status", "in": "query", "type": "string", "required": true }
+                        ]
+                    }
+                }
+            }
+        })
+        .to_string();
+        let c = from_str(&s).unwrap();
+        assert_eq!(c.name, "Petstore");
+        assert_eq!(c.variables, vec![("baseUrl".into(), "https://petstore.swagger.io/v2".into())]);
+        let folder = match &c.items[0] {
+            ImportItem::Folder { name, items, .. } => {
+                assert_eq!(name, "pet");
+                items
+            }
+            _ => panic!("expected folder bucket"),
+        };
+        let rest = match &folder[0] {
+            ImportItem::Request { draft } => match &draft.variant {
+                RequestVariant::Rest(r) => r,
+                _ => panic!("expected REST variant"),
+            },
+            _ => panic!("expected request"),
+        };
+        assert_eq!(rest.method, HttpMethod::Get);
+        assert!(rest.url.ends_with("/pet/findByStatus"));
+        assert!(rest.query.iter().any(|q| q.name == "status"));
+    }
+
+    #[test]
+    fn swagger_2_body_param_becomes_request_body() {
+        // POST with `parameters: [{in: body, schema: {$ref: '#/definitions/Pet'}}]`
+        // → `requestBody.content["application/json"].schema` with ref
+        // rewritten to `#/components/schemas/Pet`.
+        let s = json!({
+            "swagger": "2.0",
+            "info": { "title": "Petstore", "version": "1.0" },
+            "host": "petstore.swagger.io",
+            "basePath": "/v2",
+            "consumes": ["application/json"],
+            "paths": {
+                "/pet": {
+                    "post": {
+                        "operationId": "addPet",
+                        "parameters": [
+                            { "name": "body", "in": "body", "required": true,
+                              "schema": { "$ref": "#/definitions/Pet" } }
+                        ]
+                    }
+                }
+            },
+            "definitions": {
+                "Pet": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {
+                        "name": { "type": "string", "example": "doggie" },
+                        "status": { "type": "string", "example": "available" }
+                    }
+                }
+            }
+        })
+        .to_string();
+        let c = from_str(&s).unwrap();
+        let rest = first_request(&c);
+        assert_eq!(rest.method, HttpMethod::Post);
+        match &rest.body {
+            Some(BodyDraft::Json { value }) => {
+                // Schema example stub picked up `name` + `status`.
+                assert_eq!(value["name"], "doggie");
+                assert_eq!(value["status"], "available");
+            }
+            other => panic!("expected JSON body, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn swagger_2_form_data_becomes_urlencoded_body() {
+        let s = json!({
+            "swagger": "2.0",
+            "info": { "title": "X", "version": "1.0" },
+            "host": "api.example.com",
+            "paths": {
+                "/login": {
+                    "post": {
+                        "operationId": "login",
+                        "consumes": ["application/x-www-form-urlencoded"],
+                        "parameters": [
+                            { "name": "username", "in": "formData", "type": "string", "required": true },
+                            { "name": "password", "in": "formData", "type": "string", "required": true }
+                        ]
+                    }
+                }
+            }
+        })
+        .to_string();
+        let c = from_str(&s).unwrap();
+        let rest = first_request(&c);
+        match &rest.body {
+            Some(BodyDraft::FormUrlEncoded { fields }) => {
+                let names: Vec<_> = fields.iter().map(|e| e.name.as_str()).collect();
+                assert!(names.contains(&"username"));
+                assert!(names.contains(&"password"));
+            }
+            other => panic!("expected form-urlencoded body, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn swagger_2_basic_auth_security_is_migrated() {
+        // `securityDefinitions.basicAuth: { type: basic }` → 3.0
+        // `components.securitySchemes.basicAuth: { type: http, scheme: basic }`,
+        // and an operation referencing it should resolve to
+        // `AuthConfig::Basic`.
+        let s = json!({
+            "swagger": "2.0",
+            "info": { "title": "X", "version": "1.0" },
+            "host": "api.example.com",
+            "securityDefinitions": {
+                "basicAuth": { "type": "basic" }
+            },
+            "security": [{ "basicAuth": [] }],
+            "paths": {
+                "/me": {
+                    "get": { "operationId": "me" }
+                }
+            }
+        })
+        .to_string();
+        let c = from_str(&s).unwrap();
+        let rest = first_request(&c);
+        assert!(matches!(rest.auth, Some(AuthConfig::Basic { .. })));
+    }
+
+    #[test]
+    fn swagger_2_api_key_in_header_survives_migration() {
+        let s = json!({
+            "swagger": "2.0",
+            "info": { "title": "X", "version": "1.0" },
+            "host": "api.example.com",
+            "securityDefinitions": {
+                "apiKeyHeader": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+            },
+            "security": [{ "apiKeyHeader": [] }],
+            "paths": {
+                "/me": { "get": { "operationId": "me" } }
+            }
+        })
+        .to_string();
+        let c = from_str(&s).unwrap();
+        let rest = first_request(&c);
+        match &rest.auth {
+            Some(AuthConfig::ApiKey { name, location, .. }) => {
+                assert_eq!(name, "X-API-Key");
+                assert!(matches!(location, ApiKeyLocation::Header));
+            }
+            other => panic!("expected ApiKey auth, got {other:?}"),
+        }
     }
 }
