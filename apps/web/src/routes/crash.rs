@@ -5,9 +5,19 @@
 //!     `panic.location` + `panic.message` fields.
 //!   - Total body ≤ 64 KB.
 //!
+//! Sanitisation (T9.2.3):
+//!   - Every panic field runs through [`crate::sanitize::redact`]
+//!     before hashing or hitting disk. Home paths, Bearer / Basic
+//!     auth headers, common secret query params, and JWTs are
+//!     masked. The on-disk file is the sanitised JSON — the raw
+//!     body never lands on disk.
+//!
 //! Storage:
 //!   - `data_dir/crashes/YYYY-MM-DD/<sha256(location+'\n'+message)>.json`
-//!   - First write stores the report verbatim. Subsequent writes for
+//!     where `location` and `message` are the *sanitised* values, so
+//!     two users hitting the same panic dedupe even if their pre-
+//!     redaction paths differed by username.
+//!   - First write stores the sanitised report. Subsequent writes for
 //!     the same hash bump a sidecar `<hash>.count` file (atomic-ish
 //!     increment via read → +1 → write).
 //!
@@ -31,11 +41,11 @@ const MAX_BODY: usize = 64 * 1024;
 
 // Schema is `serde(deny_unknown_fields = false)` by default — we
 // accept clients that ship extra fields (e.g. future schema versions)
-// and only validate the ones we read. Most fields are read at
-// validation time only; the body itself is what's persisted to disk,
-// so we keep them in the struct as the contract.
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+// and only validate the ones we read. The struct is round-tripped:
+// parse → sanitise panic fields → serialise back to disk. Anything
+// not in the struct (forward-compat future fields) is dropped on
+// write, which is the right behaviour for a closed-alpha collector.
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CrashReport {
     pub schema: String,
     pub app_version: String,
@@ -44,16 +54,15 @@ pub struct CrashReport {
     pub panic: PanicInfo,
     /// Anonymous session id — generated client-side, persisted in
     /// `~/.argos/session_id`. Optional; older clients may omit it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct PanicInfo {
     pub message: String,
     pub location: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backtrace: Option<String>,
 }
 
@@ -74,7 +83,7 @@ pub async fn submit(
     if body.len() > MAX_BODY {
         return (StatusCode::PAYLOAD_TOO_LARGE, "max 64 KB").into_response();
     }
-    let report: CrashReport = match serde_json::from_slice(&body) {
+    let mut report: CrashReport = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             return (StatusCode::BAD_REQUEST, format!("invalid JSON: {e}"))
@@ -99,6 +108,14 @@ pub async fn submit(
             .into_response();
     }
 
+    // Scrub PII *before* hashing so two users hitting the same panic
+    // from different home directories dedupe to one file.
+    report.panic.message = crate::sanitize::redact(&report.panic.message);
+    report.panic.location = crate::sanitize::redact(&report.panic.location);
+    if let Some(bt) = report.panic.backtrace.as_ref() {
+        report.panic.backtrace = Some(crate::sanitize::redact(bt));
+    }
+
     let hash = hash_panic(&report.panic.location, &report.panic.message);
     let day = day_bucket(&report.ts);
     let day_dir = state.data_dir.join("crashes").join(&day);
@@ -114,7 +131,15 @@ pub async fn submit(
     let already_existed = tokio::fs::try_exists(&report_path).await.unwrap_or(false);
 
     if !already_existed {
-        if let Err(e) = tokio::fs::write(&report_path, &body).await {
+        let sanitised = match serde_json::to_vec_pretty(&report) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!(error = %e, "reserialise sanitised report failed");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "storage unavailable")
+                    .into_response();
+            }
+        };
+        if let Err(e) = tokio::fs::write(&report_path, &sanitised).await {
             tracing::error!(error = %e, "write crash report failed");
             return (StatusCode::INTERNAL_SERVER_ERROR, "storage unavailable")
                 .into_response();
@@ -251,6 +276,76 @@ mod tests {
         let h = test_harness::make().await;
         let res = post(&h, b"not json".to_vec()).await;
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn pii_in_panic_message_is_redacted_on_disk() {
+        let h = test_harness::make().await;
+        let body = serde_json::to_vec(&serde_json::json!({
+            "schema": "argos.crash.v1",
+            "app_version": "0.1.4",
+            "os": "macos aarch64",
+            "ts": "2026-06-01T08:00:00Z",
+            "panic": {
+                "message": "request failed at /Users/shaukat/proj/x.rs with Authorization: Bearer ABCDEF123 and api_key=topSecret",
+                "location": "/Users/shaukat/.cargo/registry/src/foo-1.0/src/lib.rs:99",
+            }
+        }))
+        .unwrap();
+        let res = post(&h, body).await;
+        assert_eq!(res.status(), StatusCode::ACCEPTED);
+        let body_bytes = axum::body::to_bytes(res.into_body(), 4096).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let hash = v["stored_as"].as_str().unwrap();
+        let stored = tokio::fs::read_to_string(
+            h.state
+                .data_dir
+                .join("crashes")
+                .join("2026-06-01")
+                .join(format!("{hash}.json")),
+        )
+        .await
+        .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&stored).unwrap();
+        let msg = parsed["panic"]["message"].as_str().unwrap();
+        let loc = parsed["panic"]["location"].as_str().unwrap();
+        assert!(!msg.contains("shaukat"));
+        assert!(!msg.contains("Bearer ABCDEF123"));
+        assert!(!msg.contains("topSecret"));
+        assert!(msg.contains("Bearer <redacted>"));
+        assert!(msg.contains("api_key=<redacted>"));
+        assert!(!loc.contains("shaukat"));
+        assert!(loc.starts_with("/Users/<user>/.cargo"));
+    }
+
+    #[tokio::test]
+    async fn dedup_works_across_different_usernames() {
+        let h = test_harness::make().await;
+        let make_body = |user: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "schema": "argos.crash.v1",
+                "app_version": "0.1.4",
+                "os": "macos aarch64",
+                "ts": "2026-06-01T08:00:00Z",
+                "panic": {
+                    "message": format!("io error at /Users/{user}/cfg.yaml"),
+                    "location": "crates/core/src/format/mod.rs:120",
+                }
+            }))
+            .unwrap()
+        };
+        let a = post(&h, make_body("alice")).await;
+        let b = post(&h, make_body("bob")).await;
+        let va: serde_json::Value =
+            serde_json::from_slice(&axum::body::to_bytes(a.into_body(), 4096).await.unwrap())
+                .unwrap();
+        let vb: serde_json::Value =
+            serde_json::from_slice(&axum::body::to_bytes(b.into_body(), 4096).await.unwrap())
+                .unwrap();
+        // Same hash → same file → second submit deduped.
+        assert_eq!(va["stored_as"], vb["stored_as"]);
+        assert_eq!(va["deduped"], false);
+        assert_eq!(vb["deduped"], true);
     }
 
     #[tokio::test]

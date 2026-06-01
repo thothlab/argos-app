@@ -176,6 +176,20 @@ What is **not** included:
 - No file paths from the workspace.
 - No system identifiers (hostname, username, MAC, hardware id).
 
+### Server-side scrubbing (defense in depth)
+
+Argos's collector at `argos.thothlab.tech/api/crash` re-runs a
+sanitizer over every incoming report **before** it lands on disk.
+Even if a panic message slips through with a home-directory path
+or an `Authorization: Bearer …` header inside its string, the
+stored copy reads `/Users/<user>/…` and `Bearer <redacted>`. Same
+treatment for common URL secret params (`api_key=`, `token=`,
+`password=`, …) and JWTs.
+
+Sanitization runs *before* the dedup hash, so two users hitting
+the same panic from different home directories collapse to a
+single report on the server side.
+
 Choices on the modal:
 
 - **Submit (just this once)** — sends the pending reports and asks

@@ -27,6 +27,7 @@ use tracing_subscriber::EnvFilter;
 
 mod ratelimit;
 mod routes;
+mod sanitize;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
