@@ -142,7 +142,17 @@ pub async fn ai_extract_log(
     let http = http_client(&state).await?;
     let raw = match request.provider.as_str() {
         "anthropic" => call_anthropic(http, &request).await?,
-        "openai-compatible" => call_openai_compatible(http, &request).await?,
+        "openai-compatible" => call_openai_compatible(http, &request, &[]).await?,
+        "openrouter" => {
+            // OpenRouter speaks OpenAI dialect; the two extra headers are
+            // optional but power their public-leaderboard attribution. Free
+            // marketing for Argos when users opt in via OpenRouter.
+            let extra = [
+                ("HTTP-Referer", "https://argos.thothlab.tech"),
+                ("X-Title", "Argos"),
+            ];
+            call_openai_compatible(http, &request, &extra).await?
+        }
         "ollama" => call_ollama(http, &request).await?,
         other => return Err(format!("unknown AI provider `{other}`")),
     };
@@ -227,6 +237,7 @@ async fn call_anthropic(
 async fn call_openai_compatible(
     http: &argos_core::HttpClient,
     input: &AiExtractInput,
+    extra_headers: &[(&str, &str)],
 ) -> Result<String, String> {
     if input.api_key.trim().is_empty() {
         return Err("OpenAI-compatible: API key is empty".into());
@@ -240,13 +251,17 @@ async fn call_openai_compatible(
         "response_format": { "type": "json_object" },
         "temperature": 0.0
     });
+    let mut headers = vec![
+        HttpHeader::new("authorization", &format!("Bearer {}", input.api_key)),
+        HttpHeader::new("content-type", "application/json"),
+    ];
+    for (k, v) in extra_headers {
+        headers.push(HttpHeader::new(*k, *v));
+    }
     let req = HttpRequest {
         method: HttpMethod::Post,
         url: format!("{}/chat/completions", input.base_url.trim_end_matches('/')),
-        headers: vec![
-            HttpHeader::new("authorization", &format!("Bearer {}", input.api_key)),
-            HttpHeader::new("content-type", "application/json"),
-        ],
+        headers,
         query: vec![],
         body: Some(HttpBody::Json { value: body }),
         timeout: Some(Duration::from_secs(60)),

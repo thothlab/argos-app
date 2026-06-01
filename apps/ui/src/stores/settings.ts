@@ -26,9 +26,20 @@ export const RELEASE_CHANNELS: ReleaseChannel[] = ['stable', 'beta', 'nightly'];
  * proxies the request; the user's key goes straight to their chosen
  * provider's endpoint.
  */
-export type AiProvider = 'none' | 'anthropic' | 'openai-compatible' | 'ollama';
+export type AiProvider =
+  | 'none'
+  | 'anthropic'
+  | 'openai-compatible'
+  | 'openrouter'
+  | 'ollama';
 
-export const AI_PROVIDERS: AiProvider[] = ['none', 'anthropic', 'openai-compatible', 'ollama'];
+export const AI_PROVIDERS: AiProvider[] = [
+  'none',
+  'anthropic',
+  'openai-compatible',
+  'openrouter',
+  'ollama',
+];
 
 /** Public-doc default endpoints — pre-fill the base URL field when the
  *  user switches providers, but let them override (Anthropic-compat
@@ -42,6 +53,14 @@ export const AI_DEFAULTS: Record<AiProvider, { baseUrl: string; model: string }>
   'openai-compatible': {
     baseUrl: 'https://api.openai.com/v1',
     model: 'gpt-4o-mini',
+  },
+  openrouter: {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    // OpenRouter exposes most major models with a `provider/model` prefix —
+    // anthropic/claude-haiku-4-5 is fast, cheap, and good at the structured
+    // extraction we use it for. Users with strong preferences override
+    // (e.g. `openai/gpt-4o-mini`, `meta-llama/llama-3.3-70b-instruct:free`).
+    model: 'anthropic/claude-haiku-4-5',
   },
   ollama: {
     baseUrl: 'http://127.0.0.1:11434',
@@ -170,6 +189,7 @@ export function mergeWithDefaults(raw: unknown): Settings {
       ai.provider === 'none' ||
       ai.provider === 'anthropic' ||
       ai.provider === 'openai-compatible' ||
+      ai.provider === 'openrouter' ||
       ai.provider === 'ollama'
     ) {
       out.ai.provider = ai.provider;

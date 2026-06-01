@@ -372,13 +372,15 @@ function AiTab() {
   const providerLabel = (p: AiProvider): string => {
     switch (p) {
       case 'none':
-        return 'None (disabled)';
+        return 'None';
       case 'anthropic':
         return 'Anthropic';
       case 'openai-compatible':
-        return 'OpenAI-compatible';
+        return 'OpenAI';
+      case 'openrouter':
+        return 'OpenRouter';
       case 'ollama':
-        return 'Ollama (local)';
+        return 'Ollama';
     }
   };
   return (
@@ -403,7 +405,11 @@ function AiTab() {
               autocomplete="off"
               class="w-[280px] rounded border border-border bg-bg-secondary px-2 py-1 font-mono text-[12px]"
               placeholder={
-                provider() === 'anthropic' ? 'sk-ant-…' : 'sk-… or provider-specific'
+                provider() === 'anthropic'
+                  ? 'sk-ant-…'
+                  : provider() === 'openrouter'
+                    ? 'sk-or-v1-…'
+                    : 'sk-… or provider-specific'
               }
               value={settings().ai.apiKey}
               onInput={(e) => setAiApiKey(e.currentTarget.value)}
@@ -414,10 +420,12 @@ function AiTab() {
           label="Base URL"
           hint={
             provider() === 'openai-compatible'
-              ? 'OpenAI default, or override for OpenRouter / Groq / Together / a local proxy.'
-              : provider() === 'ollama'
-                ? 'Default points at a local Ollama server.'
-                : 'Override only if you proxy Anthropic through a custom gateway.'
+              ? 'OpenAI default, or override for Groq / Together / Fireworks / a local proxy.'
+              : provider() === 'openrouter'
+                ? 'OpenRouter aggregator endpoint — exposes most major models behind one key.'
+                : provider() === 'ollama'
+                  ? 'Default points at a local Ollama server.'
+                  : 'Override only if you proxy Anthropic through a custom gateway.'
           }
         >
           <input
@@ -434,9 +442,11 @@ function AiTab() {
           hint={
             provider() === 'anthropic'
               ? 'e.g. claude-haiku-4-5, claude-sonnet-4-6'
-              : provider() === 'ollama'
-                ? 'e.g. llama3.1:8b, qwen2.5:7b'
-                : 'e.g. gpt-4o-mini, llama-3.3-70b-instruct'
+              : provider() === 'openrouter'
+                ? 'provider/model — e.g. anthropic/claude-haiku-4-5, openai/gpt-4o-mini, meta-llama/llama-3.3-70b-instruct'
+                : provider() === 'ollama'
+                  ? 'e.g. llama3.1:8b, qwen2.5:7b'
+                  : 'e.g. gpt-4o-mini, llama-3.3-70b-instruct'
           }
         >
           <input

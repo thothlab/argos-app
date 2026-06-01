@@ -128,10 +128,13 @@ an LLM at the paste.
 
 **Settings → AI → Provider** picks where the request goes:
 
-- `Anthropic` — Claude API. Default model `claude-haiku-4-5`.
-- `OpenAI-compatible` — OpenAI itself, or any URL with an OpenAI-style
-  `/chat/completions` endpoint (OpenRouter, Groq, Together, Fireworks,
-  a self-hosted gateway, …).
+- `Anthropic` — Claude API directly. Default model `claude-haiku-4-5`.
+- `OpenAI` — OpenAI itself or any URL with an OpenAI-style
+  `/chat/completions` endpoint (Groq, Together, Fireworks, a self-hosted
+  gateway, …). Pick any model name your endpoint exposes.
+- `OpenRouter` — aggregator that exposes most major models under one key.
+  Use the `provider/model` syntax: `anthropic/claude-haiku-4-5`,
+  `openai/gpt-4o-mini`, `meta-llama/llama-3.3-70b-instruct:free`, etc.
 - `Ollama` — local Ollama server, default `http://127.0.0.1:11434`,
   no API key needed.
 
@@ -143,10 +146,15 @@ OS-keychain integration in v1.
 
 Argos **never proxies AI traffic**. The log + your API key go straight
 from the desktop binary to the host you configured (`api.anthropic.com`,
-`api.openai.com`, your local Ollama, etc). The destination domain is
-shown in the import modal next to the byte count, so you see where the
-paste lands at the moment you click Extract — not in docs you didn't
-read.
+`api.openai.com`, `openrouter.ai`, your local Ollama, etc). The
+destination domain is shown in the import modal next to the byte count,
+so you see where the paste lands at the moment you click Extract — not
+in docs you didn't read.
+
+When the OpenRouter provider is used, Argos additionally sends an
+`HTTP-Referer: https://argos.thothlab.tech` and `X-Title: Argos`
+header — this is OpenRouter's standard attribution mechanism for their
+public app leaderboard; it doesn't change pricing or routing.
 
 The opt-in modal cap is 50 KB. Larger logs would (a) exceed many
 providers' context windows, (b) cost real tokens, (c) take long enough
