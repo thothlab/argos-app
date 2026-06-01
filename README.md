@@ -1,24 +1,32 @@
 # Argos
 
-> Fast, git-native API client. Free for individuals, monetised through managed CRDT relay for teams.
+> Fast, git-native API client. Free for individuals; managed CRDT relay for teams comes later.
 
-**Status:** Phase P0 (Bootstrap) — pre-alpha. Not usable yet.
+**Status:** P1 MVP closed-alpha. v0.1.5 released for macOS (Apple Silicon), Linux x86_64 (`.deb` / `.rpm` / `.AppImage`), and Windows x86_64. Self-test loop is active — expect rough edges; please file issues if you hit any. See [argos.thothlab.tech](https://argos.thothlab.tech/) for download links and the in-app updater for follow-up builds.
 
 ## Why Argos
 
 В «Одиссее» Гомера Argos — собака Одиссея, которая ждала хозяина 20 лет и узнала его в маскировке. Loyalty + recognition — метафора tool, который ты используешь годами и который «узнаёт» твои workflows.
 
-## What we're building
+## What's in v0.1.5
 
+- **Multi-protocol** — REST / GraphQL / WebSocket в одном паттерне (gRPC / SSE / MQTT — позже).
+- **Git-native workspace** — каждая коллекция, environment, request — это plain YAML на диске. Diffs review like code; secrets stay out of cloud.
 - **Lightweight** — Tauri-based desktop ~10–20 MB (vs 150–250 MB у Postman / Insomnia / Bruno).
-- **Multi-protocol unified UX** — REST / GraphQL / gRPC / WebSocket / SSE / MQTT в одном паттерне.
-- **Git-native** — коллекции в plain text, commit-friendly.
+- **Universal import** — Postman v2.1, Insomnia v4, Bruno, OpenAPI 3.x **и Swagger 2.0**, curl, plus **AI-powered log import** (BYOK — your own Anthropic / OpenAI / Ollama key).
+- **CLI runner** — `argos run ./collections` с reporters (junit / json / html) для CI.
+- **Auto-updater** — подписанные бинарники + stable / beta / nightly каналы.
+- **Crash reporter** — opt-in, server-side PII scrubbing.
 - **Local-first** — никакого обязательного cloud, telemetry off by default.
-- **Local mock-server** — из OpenAPI или real traffic.
-- **Time-travel + diff** — между запусками, средами, запросами.
-- **Encrypted secrets** — sops/age в git без боли.
-- **CRDT collaboration** — без cloud (P2P + self-hosted relay).
-- **Universal** — desktop + web (PWA) + VS Code extension + CLI с одним файл-форматом.
+
+### On the roadmap (P2+, не в этом релизе)
+
+- gRPC / SSE / MQTT protocols.
+- Time-travel + diff между запусками.
+- Encrypted secrets in git (sops + age).
+- Local mock-server из OpenAPI / real traffic.
+- CRDT collaboration без cloud (P2P + self-hosted relay).
+- Web mode (PWA), VS Code extension, browser capture extension.
 
 ## Repository structure
 
@@ -82,4 +90,10 @@ Apache License 2.0 — see [`LICENSE`](LICENSE).
 
 ## Contributing
 
-Прочитай [`CONTRIBUTING.md`](CONTRIBUTING.md). Issues и PR welcome после того, как пройдём Phase P1 alpha.
+Прочитай [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Закрытая альфа — пока мы сами прокликиваем v0.1.5 и чиним очевидные баги, формальный recruiting alpha-тестировщиков отложен. **Issues и PR welcome уже сейчас**, но имей в виду:
+
+- Большие фичи (новый протокол, новый формат импорта, refactor) — сначала открой issue на обсуждение.
+- Маленькие фиксы (опечатки, очевидные баги, локальный UX-фидбек) — PR без согласования ок.
+- Багрепорты с реальным workspace + воспроизведением — на вес золота.
