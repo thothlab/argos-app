@@ -43,6 +43,7 @@ import { label } from '../lib/hotkeys';
 import { notify, notifyError } from '../lib/toast';
 import { pendingUpdate } from '../lib/updater';
 import CurlImportModal from './CurlImportModal';
+import LogImportModal from './LogImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
 
 export default function TopBar() {
@@ -111,6 +112,7 @@ function SettingsTrigger() {
 
 function CurlImportControl() {
   const [curlOpen, setCurlOpen] = createSignal(false);
+  const [logOpen, setLogOpen] = createSignal(false);
   return (
     <>
       <DropdownMenu>
@@ -154,6 +156,12 @@ function CurlImportControl() {
             >
               <span>From OpenAPI / Swagger (JSON / YAML)…</span>
             </DropdownMenu.Item>
+            <DropdownMenu.Item
+              class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
+              onSelect={() => setLogOpen(true)}
+            >
+              <span>From log file (AI)…</span>
+            </DropdownMenu.Item>
             <div class="my-1 h-px bg-border" />
             <DropdownMenu.Item
               class="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-bg-secondary data-[highlighted]:bg-bg-secondary"
@@ -165,6 +173,7 @@ function CurlImportControl() {
         </DropdownMenu.Portal>
       </DropdownMenu>
       <CurlImportModal open={curlOpen()} onOpenChange={setCurlOpen} />
+      <LogImportModal open={logOpen()} onOpenChange={setLogOpen} />
     </>
   );
 }

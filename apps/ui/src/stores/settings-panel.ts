@@ -5,7 +5,7 @@
 
 import { createSignal } from 'solid-js';
 
-export type SettingsTab = 'appearance' | 'editor' | 'keybindings' | 'advanced';
+export type SettingsTab = 'appearance' | 'editor' | 'keybindings' | 'ai' | 'advanced';
 
 const [open, setOpen] = createSignal(false);
 const [activeTab, setActiveTab] = createSignal<SettingsTab>('appearance');

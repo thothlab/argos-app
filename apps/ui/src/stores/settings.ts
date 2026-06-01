@@ -20,6 +20,35 @@ export type ReleaseChannel = 'stable' | 'beta' | 'nightly';
 
 export const RELEASE_CHANNELS: ReleaseChannel[] = ['stable', 'beta', 'nightly'];
 
+/**
+ * Which AI provider Argos talks to for features like the
+ * log-extraction importer. BYOK throughout — Argos itself never
+ * proxies the request; the user's key goes straight to their chosen
+ * provider's endpoint.
+ */
+export type AiProvider = 'none' | 'anthropic' | 'openai-compatible' | 'ollama';
+
+export const AI_PROVIDERS: AiProvider[] = ['none', 'anthropic', 'openai-compatible', 'ollama'];
+
+/** Public-doc default endpoints — pre-fill the base URL field when the
+ *  user switches providers, but let them override (Anthropic-compat
+ *  proxies, OpenRouter / Groq / Together / etc.). */
+export const AI_DEFAULTS: Record<AiProvider, { baseUrl: string; model: string }> = {
+  none: { baseUrl: '', model: '' },
+  anthropic: {
+    baseUrl: 'https://api.anthropic.com',
+    model: 'claude-haiku-4-5',
+  },
+  'openai-compatible': {
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini',
+  },
+  ollama: {
+    baseUrl: 'http://127.0.0.1:11434',
+    model: 'llama3.1:8b',
+  },
+};
+
 export type Settings = {
   appearance: {
     theme: Theme;
@@ -37,6 +66,22 @@ export type Settings = {
      * the default manifest, `beta` / `nightly` read separate files.
      */
     channel: ReleaseChannel;
+  };
+  ai: {
+    /**
+     * Provider used for optional AI-backed features (log import,
+     * future scaffolding). `none` disables every AI call. BYOK
+     * throughout — Argos never proxies; the user's key goes straight
+     * to the provider.
+     */
+    provider: AiProvider;
+    /** Provider-specific API key. Stored plaintext in settings.json. */
+    apiKey: string;
+    /** Base URL — Anthropic / OpenAI default, or override for proxies
+     *  (OpenRouter, Groq, Together, local OpenAI-compatible). */
+    baseUrl: string;
+    /** Model id passed to the provider. */
+    model: string;
   };
   /**
    * actionId → combo string (e.g. "Mod+K"), or `null` to explicitly disable
@@ -59,6 +104,7 @@ export const DEFAULT_SETTINGS: Settings = {
     theme: 'follow-app',
   },
   updates: { channel: 'stable' },
+  ai: { provider: 'none', apiKey: '', baseUrl: '', model: '' },
   keybindings: {},
 };
 
@@ -117,6 +163,20 @@ export function mergeWithDefaults(raw: unknown): Settings {
     ) {
       out.updates.channel = updates.channel;
     }
+  }
+  const ai = raw.ai;
+  if (isObject(ai)) {
+    if (
+      ai.provider === 'none' ||
+      ai.provider === 'anthropic' ||
+      ai.provider === 'openai-compatible' ||
+      ai.provider === 'ollama'
+    ) {
+      out.ai.provider = ai.provider;
+    }
+    if (typeof ai.apiKey === 'string') out.ai.apiKey = ai.apiKey;
+    if (typeof ai.baseUrl === 'string') out.ai.baseUrl = ai.baseUrl;
+    if (typeof ai.model === 'string') out.ai.model = ai.model;
   }
   const kb = raw.keybindings;
   if (isObject(kb)) {
@@ -204,6 +264,40 @@ export function setEditorTheme(t: EditorThemeMode): void {
 export function setReleaseChannel(c: ReleaseChannel): void {
   updateSettings((s) => {
     s.updates.channel = c;
+  });
+}
+
+/** Switch AI provider; pre-fills baseUrl + model from `AI_DEFAULTS`
+ *  unless the user has already typed something into those fields
+ *  (preserves their override across switches). */
+export function setAiProvider(p: AiProvider): void {
+  updateSettings((s) => {
+    const prev = s.ai;
+    const defaults = AI_DEFAULTS[p];
+    s.ai = {
+      provider: p,
+      apiKey: prev.apiKey,
+      baseUrl: prev.baseUrl && prev.provider === p ? prev.baseUrl : defaults.baseUrl,
+      model: prev.model && prev.provider === p ? prev.model : defaults.model,
+    };
+  });
+}
+
+export function setAiApiKey(key: string): void {
+  updateSettings((s) => {
+    s.ai.apiKey = key;
+  });
+}
+
+export function setAiBaseUrl(url: string): void {
+  updateSettings((s) => {
+    s.ai.baseUrl = url;
+  });
+}
+
+export function setAiModel(model: string): void {
+  updateSettings((s) => {
+    s.ai.model = model;
   });
 }
 

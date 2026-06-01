@@ -173,6 +173,7 @@ version = "0.1.5"
 dependencies = [
  "argos-core",
  "argos-scripting",
+ "chrono",
  "notify",
  "notify-debouncer-mini",
  "serde",

@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai;
 mod watcher;
 
 use std::path::{Path, PathBuf};
@@ -495,6 +496,103 @@ fn openapi_import(
 ) -> Result<PostmanImportReport, String> {
     let text = read_inline_or_path(&source, inline.unwrap_or(false))?;
     let collection = openapi::from_str(&text).map_err(|e| e.to_string())?;
+    materialise_import(&workspace_root, collection)
+}
+
+/// Convert AI-extracted requests into native Argos drafts and write
+/// them into the workspace under a new "AI import (HH:MM)" folder.
+/// Reuses `materialise_import` so the on-disk layout is identical to
+/// what every other importer produces.
+#[tauri::command]
+fn ai_import_extracted(
+    workspace_root: String,
+    requests: Vec<ai::ExtractedRequest>,
+    name: Option<String>,
+) -> Result<PostmanImportReport, String> {
+    use argos_core::format::request::{
+        BodyDraft, FormField, KeyValue, RequestDraft, RequestVariant, RestRequest, ScriptHooks,
+    };
+    use argos_core::format::Kind;
+    use argos_core::http::HttpMethod;
+    use argos_core::imports::{ImportItem, ImportedCollection};
+
+    let items: Vec<ImportItem> = requests
+        .into_iter()
+        .map(|r| {
+            let method = match r.method.to_ascii_uppercase().as_str() {
+                "GET" => HttpMethod::Get,
+                "POST" => HttpMethod::Post,
+                "PUT" => HttpMethod::Put,
+                "PATCH" => HttpMethod::Patch,
+                "DELETE" => HttpMethod::Delete,
+                "HEAD" => HttpMethod::Head,
+                "OPTIONS" => HttpMethod::Options,
+                _ => HttpMethod::Get,
+            };
+            let headers: Vec<KeyValue> = r
+                .headers
+                .into_iter()
+                .map(|h| KeyValue {
+                    name: h.name,
+                    value: h.value,
+                    enabled: true,
+                })
+                .collect();
+            let query: Vec<KeyValue> = r
+                .query
+                .into_iter()
+                .map(|q| KeyValue {
+                    name: q.name,
+                    value: q.value,
+                    enabled: true,
+                })
+                .collect();
+            let body = r.body.map(|b| match b {
+                ai::ExtractedBody::Json { value } => BodyDraft::Json { value },
+                ai::ExtractedBody::Text { content } => BodyDraft::Text {
+                    content,
+                    content_type: "text/plain".into(),
+                },
+                ai::ExtractedBody::Form { fields } => BodyDraft::FormUrlEncoded {
+                    fields: fields
+                        .into_iter()
+                        .map(|f| FormField {
+                            name: f.name,
+                            value: f.value,
+                            enabled: true,
+                        })
+                        .collect(),
+                },
+            });
+            ImportItem::Request {
+                draft: RequestDraft {
+                    kind: Kind::Request,
+                    name: r.name,
+                    description: None,
+                    variant: RequestVariant::Rest(RestRequest {
+                        method,
+                        url: r.url,
+                        query,
+                        headers,
+                        body,
+                        auth: None,
+                    }),
+                    scripts: ScriptHooks::default(),
+                    schema_ref: None,
+                },
+            }
+        })
+        .collect();
+
+    let collection = ImportedCollection {
+        name: name.unwrap_or_else(|| {
+            let now = chrono::Local::now();
+            format!("AI import {}", now.format("%H:%M"))
+        }),
+        description: Some("Imported from a log file via the configured AI provider.".into()),
+        items,
+        variables: vec![],
+    };
     materialise_import(&workspace_root, collection)
 }
 
@@ -1889,6 +1987,8 @@ fn main() {
             crash_list_submitted,
             crash_reveal_dir,
             open_url,
+            ai::ai_extract_log,
+            ai_import_extracted,
             #[cfg(debug_assertions)]
             crash_simulate,
         ])

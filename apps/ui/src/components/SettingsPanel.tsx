@@ -14,6 +14,7 @@ import { closeSettings, settingsActiveTab, settingsOpen, setSettingsTab, type Se
 import { openCrashLog } from '../stores/crash-log-panel';
 import { checkForUpdatesNow, installPendingUpdate, pendingUpdate } from '../lib/updater';
 import {
+  AI_PROVIDERS,
   DEFAULT_SETTINGS,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
@@ -22,6 +23,10 @@ import {
   mergeWithDefaults,
   replaceAllSettings,
   resetAllKeybindings,
+  setAiApiKey,
+  setAiBaseUrl,
+  setAiModel,
+  setAiProvider,
   setEditorFontSize,
   setEditorLineWrapping,
   setEditorTabSize,
@@ -30,6 +35,7 @@ import {
   setReleaseChannel,
   setTheme,
   settings,
+  type AiProvider,
   type EditorThemeMode,
   type ReleaseChannel,
   type Settings,
@@ -44,6 +50,7 @@ const TABS: Array<{ id: SettingsTab; label: string }> = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'editor', label: 'Editor' },
   { id: 'keybindings', label: 'Keybindings' },
+  { id: 'ai', label: 'AI' },
   { id: 'advanced', label: 'Advanced' },
 ];
 
@@ -118,6 +125,9 @@ export default function SettingsPanel() {
               </Show>
               <Show when={settingsActiveTab() === 'keybindings'}>
                 <KeybindingsTab />
+              </Show>
+              <Show when={settingsActiveTab() === 'ai'}>
+                <AiTab />
               </Show>
               <Show when={settingsActiveTab() === 'advanced'}>
                 <AdvancedTab />
@@ -354,6 +364,102 @@ function KeybindingRow(props: { action: ActionDef }) {
         </div>
       </Show>
     </div>
+  );
+}
+
+function AiTab() {
+  const provider = () => settings().ai.provider;
+  const providerLabel = (p: AiProvider): string => {
+    switch (p) {
+      case 'none':
+        return 'None (disabled)';
+      case 'anthropic':
+        return 'Anthropic';
+      case 'openai-compatible':
+        return 'OpenAI-compatible';
+      case 'ollama':
+        return 'Ollama (local)';
+    }
+  };
+  return (
+    <>
+      <SectionHeading hint="Bring your own key. Argos never proxies — requests go straight from your machine to the provider you pick. The key is stored plaintext in settings.json.">
+        AI provider
+      </SectionHeading>
+      <Row label="Provider" hint="Choose `none` to disable every AI-powered feature.">
+        <Segmented<AiProvider>
+          value={provider()}
+          options={AI_PROVIDERS.map((p) => ({ value: p, label: providerLabel(p) }))}
+          onChange={setAiProvider}
+        />
+      </Row>
+
+      <Show when={provider() !== 'none'}>
+        <Show when={provider() !== 'ollama'}>
+          <Row label="API key" hint="Stored in settings.json (no OS keychain in v1).">
+            <input
+              type="password"
+              spellcheck={false}
+              autocomplete="off"
+              class="w-[280px] rounded border border-border bg-bg-secondary px-2 py-1 font-mono text-[12px]"
+              placeholder={
+                provider() === 'anthropic' ? 'sk-ant-…' : 'sk-… or provider-specific'
+              }
+              value={settings().ai.apiKey}
+              onInput={(e) => setAiApiKey(e.currentTarget.value)}
+            />
+          </Row>
+        </Show>
+        <Row
+          label="Base URL"
+          hint={
+            provider() === 'openai-compatible'
+              ? 'OpenAI default, or override for OpenRouter / Groq / Together / a local proxy.'
+              : provider() === 'ollama'
+                ? 'Default points at a local Ollama server.'
+                : 'Override only if you proxy Anthropic through a custom gateway.'
+          }
+        >
+          <input
+            type="text"
+            spellcheck={false}
+            autocomplete="off"
+            class="w-[280px] rounded border border-border bg-bg-secondary px-2 py-1 font-mono text-[12px]"
+            value={settings().ai.baseUrl}
+            onInput={(e) => setAiBaseUrl(e.currentTarget.value)}
+          />
+        </Row>
+        <Row
+          label="Model"
+          hint={
+            provider() === 'anthropic'
+              ? 'e.g. claude-haiku-4-5, claude-sonnet-4-6'
+              : provider() === 'ollama'
+                ? 'e.g. llama3.1:8b, qwen2.5:7b'
+                : 'e.g. gpt-4o-mini, llama-3.3-70b-instruct'
+          }
+        >
+          <input
+            type="text"
+            spellcheck={false}
+            autocomplete="off"
+            class="w-[280px] rounded border border-border bg-bg-secondary px-2 py-1 font-mono text-[12px]"
+            value={settings().ai.model}
+            onInput={(e) => setAiModel(e.currentTarget.value)}
+          />
+        </Row>
+      </Show>
+
+      <div class="mt-4 border-t border-border pt-4" />
+      <SectionHeading hint="Argos features that opt in to the configured provider.">
+        Used for
+      </SectionHeading>
+      <Row label="Log file import" hint="Paste a logcat / Charles / nginx / proprietary log; the model returns extractable HTTP requests.">
+        <span class="font-mono text-[11px] text-fg-secondary">
+          {provider() === 'none' ? 'disabled' : 'enabled'}
+        </span>
+      </Row>
+    </>
   );
 }
 

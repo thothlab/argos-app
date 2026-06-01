@@ -14,6 +14,7 @@ native YAML — no proprietary database, no lock-in.
 | **OpenAPI 3.0/3.1** | JSON or YAML spec       | One request per `paths.{path}.{method}`; folders by `tags[0]`.     |
 | **Swagger 2.0**     | JSON or YAML spec       | Converted to 3.0 shape in-memory: `host`+`basePath`+`schemes` → `servers`, body / formData params → `requestBody`, `definitions` → `components.schemas`. |
 | **cURL**            | `curl …` shell command  | Paste from devtools / docs; multi-line `\` continuations accepted. |
+| **Log file (AI)**   | Pasted log text         | Bring your own key (Anthropic / OpenAI / Ollama) — the model extracts HTTP requests from any log format. |
 
 ## Drag and drop
 
@@ -114,6 +115,75 @@ File uploads in `parameters: [{in: formData, type: file}]` become
 `{type: string, format: binary}` in the schema — generators can at
 least produce a placeholder field; full multipart support is on the
 roadmap.
+
+## Log file (AI) specifics
+
+Logs come in too many shapes — Android logcat with OkHttp's
+`HttpLoggingInterceptor`, Charles session text, nginx access lines,
+Spring's Logbook output, ad-hoc `console.log({ url, headers, body })`
+dumps. Instead of shipping a parser per format, Argos lets you point
+an LLM at the paste.
+
+### Setup
+
+**Settings → AI → Provider** picks where the request goes:
+
+- `Anthropic` — Claude API. Default model `claude-haiku-4-5`.
+- `OpenAI-compatible` — OpenAI itself, or any URL with an OpenAI-style
+  `/chat/completions` endpoint (OpenRouter, Groq, Together, Fireworks,
+  a self-hosted gateway, …).
+- `Ollama` — local Ollama server, default `http://127.0.0.1:11434`,
+  no API key needed.
+
+Paste your provider's API key, optionally override the base URL, pick
+a model. The key is stored plaintext in `settings.json` — Argos has no
+OS-keychain integration in v1.
+
+### Privacy
+
+Argos **never proxies AI traffic**. The log + your API key go straight
+from the desktop binary to the host you configured (`api.anthropic.com`,
+`api.openai.com`, your local Ollama, etc). The destination domain is
+shown in the import modal next to the byte count, so you see where the
+paste lands at the moment you click Extract — not in docs you didn't
+read.
+
+The opt-in modal cap is 50 KB. Larger logs would (a) exceed many
+providers' context windows, (b) cost real tokens, (c) take long enough
+that the app feels frozen. Trim or split first; the modal shows live
+byte count.
+
+### Flow
+
+1. **File → Import → From log file (AI)…** opens the modal.
+2. Paste the log into the textarea. Byte count updates live.
+3. Click **Extract requests**. The model returns a list of HTTP
+   requests it found in the log.
+4. Review the list — uncheck anything you don't want (the model
+   sometimes picks up noise like health-check probes).
+5. Click **Import selected**. The requests are written under a new
+   `AI import HH:MM` folder in the active workspace.
+
+The extracted shape mirrors the standard Argos request: method, URL,
+headers (verbatim — including auth tokens for replay), query, body
+(JSON / text / form-urlencoded). Folder grouping, tag extraction, and
+multi-step session detection are deferred to future revisions.
+
+### What this is good for
+
+- One-off "I see this request in the log, let me replay it" workflows.
+- Logs from frameworks Argos doesn't have a native parser for.
+- Heterogeneous logs from multiple sources concatenated together.
+
+### What this isn't
+
+- A replacement for native parsers when one exists. If you have a
+  Postman / Bruno / OpenAPI export, those are deterministic — use the
+  matching importer.
+- Batch processing of 100 MB log files. Cap is 50 KB per extract.
+- Free. The user's API key incurs the user's provider bill; budget
+  ~$0.001–$0.01 per Extract for Anthropic Haiku / OpenAI Mini sized
+  models on typical paste sizes.
 
 ## Exporting
 

@@ -164,6 +164,60 @@ export async function openapiImport(
   });
 }
 
+// ---- AI ----------------------------------------------------------------
+
+export type AiExtractedBody =
+  | { kind: 'json'; value: unknown }
+  | { kind: 'text'; content: string }
+  | { kind: 'form'; fields: Array<{ name: string; value: string }> };
+
+export type AiExtractedRequest = {
+  name: string;
+  method: string;
+  url: string;
+  headers: Array<{ name: string; value: string }>;
+  query: Array<{ name: string; value: string }>;
+  body?: AiExtractedBody;
+};
+
+export type AiExtractResponse = {
+  requests: AiExtractedRequest[];
+  /** Raw model output before JSON parsing — surfaced for debugging
+   *  when the parsed list isn't what the user expected. */
+  raw: string;
+};
+
+/** Hard input cap enforced by the Rust side; mirror it here so the UI
+ *  can show live size and disable Extract before the round-trip. */
+export const AI_MAX_LOG_BYTES = 50 * 1024;
+
+/** Send a log blob to the configured AI provider and parse the
+ *  extracted requests. All four fields come from `settings.ai.*` —
+ *  the Rust side validates them and returns a typed error otherwise. */
+export async function aiExtractLog(input: {
+  provider: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  logText: string;
+}): Promise<AiExtractResponse> {
+  return invokeCommand<AiExtractResponse>('ai_extract_log', { request: input });
+}
+
+/** Write the selected subset of AI-extracted requests into the
+ *  workspace under a new folder ("AI import HH:MM" by default). */
+export async function aiImportExtracted(
+  workspaceRoot: string,
+  requests: AiExtractedRequest[],
+  name?: string,
+): Promise<PostmanImportReport> {
+  return invokeCommand<PostmanImportReport>('ai_import_extracted', {
+    workspaceRoot,
+    requests,
+    name,
+  });
+}
+
 /** Importer format identifiers used by the drag-drop wizard. */
 export type ImportFormat = 'postman' | 'insomnia' | 'openapi' | 'bruno' | 'unknown';
 
