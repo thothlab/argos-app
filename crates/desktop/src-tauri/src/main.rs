@@ -499,15 +499,30 @@ fn openapi_import(
     materialise_import(&workspace_root, collection)
 }
 
+/// Where the AI-extracted requests should land.
+///
+///   - `new`      — make a fresh top-level folder under
+///     `<workspace>/collections/`. `name` is the display name; if a
+///     folder with that slug already exists, the materialiser suffixes
+///     with `-2`, `-3` etc.
+///   - `existing` — append request files directly to an existing
+///     folder inside the workspace. `folder_path` must resolve to a
+///     directory inside `workspace_root`; we reject anything outside
+///     as a path-traversal safeguard.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AiImportTarget {
+    New { name: String },
+    Existing { folder_path: String },
+}
+
 /// Convert AI-extracted requests into native Argos drafts and write
-/// them into the workspace under a new "AI import (HH:MM)" folder.
-/// Reuses `materialise_import` so the on-disk layout is identical to
-/// what every other importer produces.
+/// them into the workspace. Two modes — see [`AiImportTarget`].
 #[tauri::command]
 fn ai_import_extracted(
     workspace_root: String,
     requests: Vec<ai::ExtractedRequest>,
-    name: Option<String>,
+    target: AiImportTarget,
 ) -> Result<PostmanImportReport, String> {
     use argos_core::format::request::{
         BodyDraft, FormField, KeyValue, RequestDraft, RequestVariant, RestRequest, ScriptHooks,
@@ -584,16 +599,54 @@ fn ai_import_extracted(
         })
         .collect();
 
-    let collection = ImportedCollection {
-        name: name.unwrap_or_else(|| {
-            let now = chrono::Local::now();
-            format!("AI import {}", now.format("%H:%M"))
-        }),
-        description: Some("Imported from a log file via the configured AI provider.".into()),
-        items,
-        variables: vec![],
-    };
-    materialise_import(&workspace_root, collection)
+    match target {
+        AiImportTarget::New { name } => {
+            let trimmed = name.trim();
+            let folder_name = if trimmed.is_empty() {
+                let now = chrono::Local::now();
+                format!("AI import {}", now.format("%H:%M"))
+            } else {
+                trimmed.to_string()
+            };
+            let collection = ImportedCollection {
+                name: folder_name,
+                description: Some(
+                    "Imported from a log file via the configured AI provider.".into(),
+                ),
+                items,
+                variables: vec![],
+            };
+            materialise_import(&workspace_root, collection)
+        }
+        AiImportTarget::Existing { folder_path } => {
+            let ws_root = Path::new(&workspace_root);
+            let parent = Path::new(&folder_path);
+            if !parent.is_dir() {
+                return Err(format!("target folder does not exist: {folder_path}"));
+            }
+            // Path-traversal guard: target must be inside the workspace.
+            let ws_abs = ws_root
+                .canonicalize()
+                .map_err(|e| format!("workspace root invalid: {e}"))?;
+            let parent_abs = parent
+                .canonicalize()
+                .map_err(|e| format!("target folder invalid: {e}"))?;
+            if !parent_abs.starts_with(&ws_abs) {
+                return Err(format!(
+                    "target folder `{folder_path}` is outside the workspace"
+                ));
+            }
+            let mut counts = (0_usize, 0_usize);
+            write_import_items(&parent_abs, &items, &mut counts)?;
+            Ok(PostmanImportReport {
+                folder_path: parent_abs.to_string_lossy().into_owned(),
+                folders_created: counts.0,
+                requests_created: counts.1,
+                variables_count: 0,
+                env_path: None,
+            })
+        }
+    }
 }
 
 /// Sniff `path` and decide which importer to use. Drives the drag-drop

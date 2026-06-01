@@ -169,8 +169,18 @@ byte count.
    requests it found in the log.
 4. Review the list — uncheck anything you don't want (the model
    sometimes picks up noise like health-check probes).
-5. Click **Import selected**. The requests are written under a new
-   `AI import HH:MM` folder in the active workspace.
+5. Pick a target. Two modes:
+   - **New folder** (default) — the editable folder name defaults to
+     `AI import HH:MM`; the new folder is created under
+     `<workspace>/collections/` (or the workspace root if there's no
+     `collections/` dir). If a folder with that slug already exists,
+     a numeric suffix (`-2`, `-3`, …) is appended automatically.
+   - **Add to existing folder** — picks any folder currently in the
+     workspace tree; request files are appended into it without
+     touching existing requests. Disabled when the workspace has no
+     folders yet.
+6. Click **Import selected**. The chosen requests are written into the
+   target.
 
 The extracted shape mirrors the standard Argos request: method, URL,
 headers (verbatim — including auth tokens for replay), query, body

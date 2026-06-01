@@ -204,17 +204,30 @@ export async function aiExtractLog(input: {
   return invokeCommand<AiExtractResponse>('ai_extract_log', { request: input });
 }
 
+/** Where extracted requests should land in the workspace. */
+export type AiImportTarget =
+  | { kind: 'new'; name: string }
+  | { kind: 'existing'; folderPath: string };
+
 /** Write the selected subset of AI-extracted requests into the
- *  workspace under a new folder ("AI import HH:MM" by default). */
+ *  workspace. `target` decides between a fresh top-level folder
+ *  ("AI import HH:MM" by default if `name` is empty) and appending
+ *  to an existing folder inside the workspace. */
 export async function aiImportExtracted(
   workspaceRoot: string,
   requests: AiExtractedRequest[],
-  name?: string,
+  target: AiImportTarget,
 ): Promise<PostmanImportReport> {
+  // Map the JS-shape target into the snake-cased shape the Rust
+  // serde enum expects (`folder_path`, not `folderPath`).
+  const rustTarget =
+    target.kind === 'new'
+      ? { kind: 'new' as const, name: target.name }
+      : { kind: 'existing' as const, folder_path: target.folderPath };
   return invokeCommand<PostmanImportReport>('ai_import_extracted', {
     workspaceRoot,
     requests,
-    name,
+    target: rustTarget,
   });
 }
 

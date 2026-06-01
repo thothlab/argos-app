@@ -19,17 +19,28 @@ import {
   aiImportExtracted,
   workspaceReload,
   type AiExtractedRequest,
+  type AiImportTarget,
 } from '../lib/api';
 import { notify, notifyError } from '../lib/toast';
 import { settings } from '../stores/settings';
 import { setWorkspace, workspace } from '../stores/workspace';
 import { openSettings } from '../stores/settings-panel';
+import { walkFolders } from '../types/workspace';
 
 type Phase =
   | { kind: 'paste' }
   | { kind: 'extracting' }
   | { kind: 'review'; results: AiExtractedRequest[]; selected: boolean[]; raw: string }
   | { kind: 'importing' };
+
+function defaultFolderName(): string {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `AI import ${hh}:${mm}`;
+}
+
+type TargetMode = 'new' | 'existing';
 
 export default function LogImportModal(props: {
   open: boolean;
@@ -38,6 +49,16 @@ export default function LogImportModal(props: {
   const [logText, setLogText] = createSignal('');
   const [phase, setPhase] = createSignal<Phase>({ kind: 'paste' });
   const [error, setError] = createSignal<string | null>(null);
+  const [targetMode, setTargetMode] = createSignal<TargetMode>('new');
+  const [newFolderName, setNewFolderName] = createSignal(defaultFolderName());
+  const [existingFolderPath, setExistingFolderPath] = createSignal<string>('');
+
+  // Available existing folders, recomputed each time the modal opens.
+  const folderOptions = createMemo(() => {
+    const ws = workspace();
+    if (!ws) return [];
+    return walkFolders(ws.tree);
+  });
 
   const ai = () => settings().ai;
   const enabled = () => ai().provider !== 'none' && ai().model.trim() !== '';
@@ -57,6 +78,9 @@ export default function LogImportModal(props: {
     setLogText('');
     setPhase({ kind: 'paste' });
     setError(null);
+    setTargetMode('new');
+    setNewFolderName(defaultFolderName());
+    setExistingFolderPath('');
   }
 
   async function doExtract() {
@@ -112,10 +136,25 @@ export default function LogImportModal(props: {
       setError('Open a workspace first.');
       return;
     }
+    // Build the target descriptor from the radio choice.
+    let target: AiImportTarget;
+    if (targetMode() === 'existing') {
+      const fp = existingFolderPath();
+      if (!fp) {
+        setError('Pick an existing folder, or switch to "New folder".');
+        return;
+      }
+      target = { kind: 'existing', folderPath: fp };
+    } else {
+      target = {
+        kind: 'new',
+        name: newFolderName().trim() || defaultFolderName(),
+      };
+    }
     setError(null);
     setPhase({ kind: 'importing' });
     try {
-      const report = await aiImportExtracted(ws.root, picked);
+      const report = await aiImportExtracted(ws.root, picked, target);
       notify.success('AI log import', `${report.requests_created} requests imported.`);
       const refreshed = await workspaceReload(ws.root);
       setWorkspace(refreshed);
@@ -210,9 +249,81 @@ export default function LogImportModal(props: {
                 <>
                   <div class="mt-2 text-[11px] text-fg-secondary">
                     Found <strong class="text-fg-primary">{p.results.length}</strong> requests.
-                    Uncheck anything you don't want; the rest will land under a new
-                    "AI import" folder.
+                    Uncheck anything you don't want; the rest will land where you pick below.
                   </div>
+
+                  <Show when={p.results.length > 0}>
+                    <div class="mt-3 rounded border border-border bg-bg-secondary/40 p-2">
+                      <div class="flex gap-4 text-[11px]">
+                        <label class="flex cursor-pointer items-center gap-1.5">
+                          <input
+                            type="radio"
+                            class="accent-[var(--color-primary)]"
+                            checked={targetMode() === 'new'}
+                            onChange={() => setTargetMode('new')}
+                          />
+                          New folder
+                        </label>
+                        <label
+                          class="flex cursor-pointer items-center gap-1.5"
+                          classList={{
+                            'opacity-50 cursor-not-allowed': folderOptions().length === 0,
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            class="accent-[var(--color-primary)]"
+                            checked={targetMode() === 'existing'}
+                            disabled={folderOptions().length === 0}
+                            onChange={() => setTargetMode('existing')}
+                          />
+                          Add to existing folder
+                          <Show when={folderOptions().length === 0}>
+                            <span class="ml-1 text-fg-secondary">(no folders yet)</span>
+                          </Show>
+                        </label>
+                      </div>
+
+                      <Show when={targetMode() === 'new'}>
+                        <div class="mt-2 flex items-center gap-2">
+                          <label class="w-[110px] text-[11px] text-fg-secondary">Folder name</label>
+                          <input
+                            type="text"
+                            spellcheck={false}
+                            autocomplete="off"
+                            class="flex-1 rounded border border-border bg-bg-secondary px-2 py-1 font-mono text-[11px]"
+                            value={newFolderName()}
+                            onInput={(e) => setNewFolderName(e.currentTarget.value)}
+                          />
+                        </div>
+                        <p class="mt-1 pl-[118px] text-[10px] text-fg-secondary">
+                          Created under{' '}
+                          <span class="font-mono">collections/</span> (or the workspace root if
+                          there is no <span class="font-mono">collections/</span> dir).
+                        </p>
+                      </Show>
+
+                      <Show when={targetMode() === 'existing'}>
+                        <div class="mt-2 flex items-center gap-2">
+                          <label class="w-[110px] text-[11px] text-fg-secondary">Folder</label>
+                          <select
+                            class="flex-1 rounded border border-border bg-bg-secondary px-2 py-1 font-mono text-[11px]"
+                            value={existingFolderPath()}
+                            onChange={(e) => setExistingFolderPath(e.currentTarget.value)}
+                          >
+                            <option value="">— pick a folder —</option>
+                            <For each={folderOptions()}>
+                              {(f) => <option value={f.path}>{f.label}</option>}
+                            </For>
+                          </select>
+                        </div>
+                        <p class="mt-1 pl-[118px] text-[10px] text-fg-secondary">
+                          Files are appended into this folder — existing requests are not touched.
+                        </p>
+                      </Show>
+                    </div>
+                  </Show>
+
                   <Show when={p.results.length === 0}>
                     <div class="mt-3 rounded border border-border bg-bg-secondary/60 p-3 text-[11px] text-fg-secondary">
                       The model didn't find any requests. Raw output:

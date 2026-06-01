@@ -193,3 +193,25 @@ export function walkRequests(tree: TreeNode): Array<{ path: string; draft: Reque
   }
   return tree.children.flatMap(walkRequests);
 }
+
+/** Walk the tree and return every folder with a breadcrumb label like
+ *  `docs / Auth / admin`. The workspace root itself is omitted (its
+ *  `name` is the workspace's own name, which isn't meaningful as a
+ *  target — pick a child folder instead). The result is in document
+ *  order, suitable for a flat dropdown. */
+export function walkFolders(tree: TreeNode): Array<{ path: string; label: string }> {
+  const out: Array<{ path: string; label: string }> = [];
+  function visit(node: TreeNode, trail: string[]): void {
+    if (node.kind !== 'folder') return;
+    if (trail.length > 0) {
+      out.push({ path: node.path, label: trail.join(' / ') });
+    }
+    for (const c of node.children) {
+      if (c.kind === 'folder') {
+        visit(c, [...trail, c.name]);
+      }
+    }
+  }
+  visit(tree, []);
+  return out;
+}
