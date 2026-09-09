@@ -62,7 +62,10 @@ impl Resolver {
     /// regex, no double-pass — so very large inputs (request bodies)
     /// stay cheap.
     pub fn resolve(&mut self, input: &str) -> String {
-        let mut out = String::with_capacity(input.len());
+        // Scanning bytes and collecting into a byte buffer keeps multi-byte
+        // UTF-8 intact: `{{`, `}}` are ASCII, so every splice point falls on
+        // a character boundary and the untouched bytes are copied verbatim.
+        let mut out: Vec<u8> = Vec::with_capacity(input.len());
         let bytes = input.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
@@ -71,12 +74,12 @@ impl Resolver {
                 if let Some(end) = find_close(bytes, i + 2) {
                     let name = std::str::from_utf8(&bytes[i + 2..end]).unwrap_or("").trim();
                     if let Some(value) = self.lookup(name) {
-                        out.push_str(&value);
+                        out.extend_from_slice(value.as_bytes());
                     } else {
                         // Leave the placeholder verbatim and remember the miss.
-                        out.push_str("{{");
-                        out.push_str(name);
-                        out.push_str("}}");
+                        out.extend_from_slice(b"{{");
+                        out.extend_from_slice(name.as_bytes());
+                        out.extend_from_slice(b"}}");
                         if !self.missing.iter().any(|m| m == name) {
                             self.missing.push(name.to_string());
                         }
@@ -85,10 +88,11 @@ impl Resolver {
                     continue;
                 }
             }
-            out.push(bytes[i] as char);
+            out.push(bytes[i]);
             i += 1;
         }
-        out
+        // Safe: input was valid UTF-8 and every inserted value is a `String`.
+        String::from_utf8(out).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
     }
 
     fn lookup(&self, name: &str) -> Option<String> {
@@ -176,6 +180,15 @@ mod tests {
         let mut r = Resolver::new([("name", "Alice")]);
         assert_eq!(r.resolve("{{ name }}"), "Alice");
         assert_eq!(r.resolve("{{}}"), "{{}}");
+    }
+
+    #[test]
+    fn preserves_non_ascii_text() {
+        let mut r = Resolver::new([("host", "https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}")]);
+        assert_eq!(
+            r.resolve("{{host}}/\u{43f}\u{443}\u{442}\u{44c}?q=\u{442}\u{435}\u{441}\u{442} \u{1f680}"),
+            "https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}/\u{43f}\u{443}\u{442}\u{44c}?q=\u{442}\u{435}\u{441}\u{442} \u{1f680}"
+        );
     }
 
     #[test]
