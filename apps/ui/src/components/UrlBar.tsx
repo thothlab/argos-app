@@ -28,6 +28,7 @@ import { notify, notifyError } from '../lib/toast';
 import type { HttpMethod } from '../types/http';
 
 import MethodPicker from './MethodPicker';
+import VarInput from './VarInput';
 
 const COPY_TARGETS: Array<{ id: CodegenTarget; label: string }> = [
   { id: 'curl', label: 'cURL' },
@@ -49,17 +50,14 @@ export default function UrlBar() {
     if (!draft || !draft.url.trim()) return;
 
     const tab = activeTab();
-    const ancestors = tab?.path
-      ? findAncestors(tab.path, workspace()?.tree ?? null)
-      : [];
+    const ancestors = tab?.path ? findAncestors(tab.path, workspace()?.tree ?? null) : [];
     const merged = applyFolderInheritance(draft, ancestors);
 
     const wire = toWireRequest(merged);
     const env = activeEnvVars();
     setResponse(tabId, { status: 'loading', startedAt: Date.now() });
     const ws = workspace();
-    const persist =
-      ws && tab?.path ? { workspaceRoot: ws.root, requestPath: tab.path } : undefined;
+    const persist = ws && tab?.path ? { workspaceRoot: ws.root, requestPath: tab.path } : undefined;
 
     const preScript = merged.preRequest.trim().length > 0 ? merged.preRequest : null;
     const testsScript = merged.tests.trim().length > 0 ? merged.tests : null;
@@ -114,18 +112,15 @@ export default function UrlBar() {
         }}
       />
 
-      <input
-        type="text"
-        spellcheck={false}
-        autocomplete="off"
-        autocorrect="off"
-        class="h-9 min-w-0 flex-1 border-y border-border bg-bg-card px-3 font-mono text-[13px] outline-none focus:border-primary"
+      <VarInput
+        wrapperClass="relative min-w-0 flex-1"
+        class="h-9 w-full border-y border-border bg-bg-card px-3 font-mono text-[13px] outline-none focus:border-primary"
         placeholder="https://api.example.com/users  —  use {{var}} for environment values"
         value={displayUrl()}
         disabled={!tabId()}
-        onInput={(e) => {
+        onInput={(v) => {
           const id = tabId();
-          if (id) setUrl(id, e.currentTarget.value);
+          if (id) setUrl(id, v);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {

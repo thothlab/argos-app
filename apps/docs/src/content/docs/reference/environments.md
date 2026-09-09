@@ -35,6 +35,56 @@ const val = bru.env.get(ref.slice(2, -2));
 bru.req.setHeader('X-Final', val);
 ```
 
+## Dynamic variables
+
+Some fields must differ on every send — a `request_id`, a nonce, a
+cache-buster. Instead of storing a constant and editing it by hand
+before each run, reference a `$`-prefixed **dynamic variable**. The
+engine computes the value at send time; nothing is stored in the
+request file.
+
+```
+X-Request-Id: {{$randomUuid}}
+```
+
+| Variable                | Value                                        |
+| ----------------------- | -------------------------------------------- |
+| `{{$randomUuid}}`       | UUID v4, fresh on every send                  |
+| `{{$guid}}`             | alias of `$randomUuid` (Postman compatibility)|
+| `{{$randomUUID}}`       | alias of `$randomUuid` (Postman compatibility)|
+| `{{$randomInt}}`        | random 32-bit unsigned integer                |
+| `{{$randomHex}}`        | random 16-character hex string                |
+| `{{$randomAlphaNumeric}}` | random 16-character alphanumeric string     |
+| `{{$timestamp}}`        | Unix epoch, milliseconds                      |
+| `{{$timestampSeconds}}` | Unix epoch, seconds                           |
+| `{{$isoTimestamp}}`     | RFC 3339 / ISO 8601 timestamp at UTC          |
+
+Type `{{` in the URL bar or in any Params / Headers value to get the
+list as autocomplete, alongside the active environment's own variables.
+
+### One value per request
+
+Each dynamic variable is generated **once per request** and reused
+everywhere it appears in that request. A `{{$randomUuid}}` in a header
+and the same placeholder in the body carry the *same* id — which is what
+a correlation id needs — and the next send generates a new one. The same
+holds for `{{$timestamp}}`: one request cannot straddle two timestamps.
+
+When a single request genuinely needs two independent values of the same
+kind, add a `#label` suffix. The label only separates them; it is not
+part of the generated value:
+
+```json
+{ "outer_id": "{{$randomUuid#outer}}", "inner_id": "{{$randomUuid#inner}}" }
+```
+
+An environment variable with the same name wins over the built-in, so a
+test environment can pin `$timestamp` to a fixed value to make request
+snapshots reproducible.
+
+Random values come from a fast non-cryptographic PRNG. They are fine as
+ids and cache-busters; do not use them as secrets or tokens.
+
 ## Precedence
 
 Highest to lowest:
@@ -45,7 +95,9 @@ Highest to lowest:
 2. **Pre-request `bru.env.set`** — staged for the rest of the run.
 3. **Active environment file** — `secrets` first, then `variables`
    (secrets win when both define the same name).
-4. **Nothing** — placeholder passes through untouched.
+4. **Dynamic built-in** — a `$`-prefixed name from the table above,
+   computed once per request.
+5. **Nothing** — placeholder passes through untouched.
 
 The `CI` environment + `--iteration-data` pattern is the workhorse
 combination for parameterised CI runs: a stable workspace + a CSV that

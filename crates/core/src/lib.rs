@@ -32,7 +32,7 @@ pub use http::{
     HttpBody, HttpClient, HttpError, HttpHeader, HttpMethod, HttpRequest, HttpResponse,
     ResponseBody, Timing,
 };
-pub use vars::Resolver;
+pub use vars::{BuiltinVar, Resolver, BUILTIN_VARS};
 pub use workspace::{TreeNode, Workspace};
 
 /// Crate version (matches `Cargo.toml`).

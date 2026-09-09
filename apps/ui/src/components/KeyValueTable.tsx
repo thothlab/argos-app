@@ -19,6 +19,8 @@ import { Index, Show, type JSX } from 'solid-js';
 
 import { Trash2 } from 'lucide-solid';
 
+import VarInput from './VarInput';
+
 export type RowEntry = {
   name: string;
   value: string;
@@ -32,6 +34,12 @@ export type KeyValueTableProps = {
   valuePlaceholder?: string;
   /** Optional custom rendering for the value column (e.g. for autocomplete). */
   valueColumn?: (row: RowEntry, idx: number, set: (v: string) => void) => JSX.Element;
+  /**
+   * Offer `{{variable}}` autocomplete in the value column — environment
+   * variables plus the dynamic built-ins. Off by default so tables that
+   * hold literal data (an environment's own values) stay plain.
+   */
+  suggestVars?: boolean;
 };
 
 export default function KeyValueTable(props: KeyValueTableProps) {
@@ -108,8 +116,19 @@ export default function KeyValueTable(props: KeyValueTableProps) {
                   />
                 </td>
                 <td>
+                  {/*
+                    Each branch is picked by a prop that never changes for a
+                    mounted table, so the chosen editor's DOM node survives
+                    every keystroke (see the `<Index>` note above).
+                  */}
                   {props.valueColumn ? (
                     props.valueColumn(row(), i, (v) => update(i, { value: v }))
+                  ) : props.suggestVars ? (
+                    <VarInput
+                      value={row().value}
+                      onInput={(v) => update(i, { value: v })}
+                      placeholder={props.valuePlaceholder ?? 'Value'}
+                    />
                   ) : (
                     <input
                       type="text"

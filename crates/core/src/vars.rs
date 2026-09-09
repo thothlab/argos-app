@@ -9,13 +9,20 @@
 //! and reported via [`Resolver::missing`] so the UI can surface a warning
 //! before send.
 //!
-//! ## Built-in helpers
+//! ## Built-in (dynamic) helpers
 //!
-//! A handful of `$`-prefixed names are computed instead of looked up:
-//! - `{{$timestamp}}` — Unix epoch milliseconds
-//! - `{{$randomUuid}}` — UUIDv4
-//! - `{{$randomInt}}` — random `u32` as decimal string
-//! - `{{$isoTimestamp}}` — RFC 3339 / ISO 8601 timestamp at UTC
+//! A handful of `$`-prefixed names are computed instead of looked up —
+//! see [`BUILTIN_VARS`] for the full, user-facing list. They exist so a
+//! field that must differ on every send (`request_id`, a nonce, a
+//! cache-buster) can be written once instead of edited by hand before
+//! each run.
+//!
+//! **Each value is generated once per [`Resolver`]**, i.e. once per
+//! request. `{{$randomUuid}}` in a header and in the body therefore carry
+//! the *same* id — which is the point for a correlation id — while the
+//! next send produces a fresh one. When a single request genuinely needs
+//! two independent values of the same kind, disambiguate them with a
+//! `#label` suffix: `{{$randomUuid#outer}}` and `{{$randomUuid#inner}}`.
 
 use std::collections::HashMap;
 
@@ -29,6 +36,10 @@ pub struct Resolver {
     vars: HashMap<String, String>,
     /// Names referenced in inputs but missing from `vars` and not a built-in.
     missing: Vec<String>,
+    /// Values already generated for `$`-builtins, keyed by the full
+    /// placeholder name (`#label` suffix included). Keeps one request's
+    /// `{{$randomUuid}}` identical everywhere it appears.
+    generated: HashMap<String, String>,
 }
 
 impl Resolver {
@@ -45,6 +56,7 @@ impl Resolver {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
             missing: Vec::new(),
+            generated: HashMap::new(),
         }
     }
 
@@ -92,14 +104,22 @@ impl Resolver {
             i += 1;
         }
         // Safe: input was valid UTF-8 and every inserted value is a `String`.
-        String::from_utf8(out).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+        String::from_utf8(out)
+            .unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
     }
 
-    fn lookup(&self, name: &str) -> Option<String> {
-        if let Some(builtin) = builtin(name) {
-            return Some(builtin);
+    /// Explicit env vars win over built-ins, so a workspace can pin
+    /// `$timestamp` to a fixed value in a test environment.
+    fn lookup(&mut self, name: &str) -> Option<String> {
+        if let Some(value) = self.vars.get(name) {
+            return Some(value.clone());
         }
-        self.vars.get(name).cloned()
+        if let Some(cached) = self.generated.get(name) {
+            return Some(cached.clone());
+        }
+        let value = builtin(name)?;
+        self.generated.insert(name.to_string(), value.clone());
+        Some(value)
     }
 }
 
@@ -114,18 +134,92 @@ fn find_close(bytes: &[u8], from: usize) -> Option<usize> {
     None
 }
 
+/// One dynamic variable as shown to the user (autocomplete, docs).
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct BuiltinVar {
+    /// Placeholder name including the leading `$`, without braces.
+    pub name: &'static str,
+    /// One-line description for the UI.
+    pub description: &'static str,
+    /// Example of a generated value.
+    pub example: &'static str,
+}
+
+/// Every dynamic variable the resolver understands, in the order the UI
+/// should list them. Aliases are listed too so a Postman-imported
+/// collection's `{{$guid}}` is discoverable as-is.
+pub const BUILTIN_VARS: &[BuiltinVar] = &[
+    BuiltinVar {
+        name: "$randomUuid",
+        description: "Random UUID v4 - new on every send",
+        example: "9f1c2e6a-1f3b-4d59-9c2f-7c2a6c0b0f11",
+    },
+    BuiltinVar {
+        name: "$guid",
+        description: "Alias of $randomUuid (Postman compatibility)",
+        example: "9f1c2e6a-1f3b-4d59-9c2f-7c2a6c0b0f11",
+    },
+    BuiltinVar {
+        name: "$randomUUID",
+        description: "Alias of $randomUuid (Postman compatibility)",
+        example: "9f1c2e6a-1f3b-4d59-9c2f-7c2a6c0b0f11",
+    },
+    BuiltinVar {
+        name: "$randomInt",
+        description: "Random 32-bit unsigned integer",
+        example: "2147018233",
+    },
+    BuiltinVar {
+        name: "$randomHex",
+        description: "Random 16-character hex string - short request id",
+        example: "3f8a1c92b70de451",
+    },
+    BuiltinVar {
+        name: "$randomAlphaNumeric",
+        description: "Random 16-character alphanumeric string",
+        example: "k3Rt9xQ1mZ0aVb7L",
+    },
+    BuiltinVar {
+        name: "$timestamp",
+        description: "Unix epoch in milliseconds",
+        example: "1757462400123",
+    },
+    BuiltinVar {
+        name: "$timestampSeconds",
+        description: "Unix epoch in seconds",
+        example: "1757462400",
+    },
+    BuiltinVar {
+        name: "$isoTimestamp",
+        description: "RFC 3339 / ISO 8601 timestamp at UTC",
+        example: "2026-09-10T08:00:00.123+00:00",
+    },
+];
+
+/// Compute a `$`-builtin. A `#label` suffix only disambiguates cache
+/// entries in [`Resolver`] and is stripped before matching.
 fn builtin(name: &str) -> Option<String> {
-    match name {
-        "$timestamp" =>
-        {
-            #[allow(clippy::cast_sign_loss)]
-            Some(Utc::now().timestamp_millis().to_string())
-        }
+    let base = name.split('#').next().unwrap_or(name);
+    match base {
+        "$timestamp" => Some(Utc::now().timestamp_millis().to_string()),
+        "$timestampSeconds" => Some(Utc::now().timestamp().to_string()),
         "$isoTimestamp" => Some(Utc::now().to_rfc3339()),
-        "$randomUuid" => Some(Uuid::new_v4().to_string()),
+        "$randomUuid" | "$guid" | "$randomUUID" => Some(Uuid::new_v4().to_string()),
         "$randomInt" => Some(rand_u32().to_string()),
+        "$randomHex" => Some(random_string(16, b"0123456789abcdef")),
+        "$randomAlphaNumeric" => Some(random_string(
+            16,
+            b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        )),
         _ => None,
     }
+}
+
+/// `len` characters drawn from `alphabet` via [`rand_u32`].
+fn random_string(len: usize, alphabet: &[u8]) -> String {
+    (0..len)
+        .map(|_| alphabet[rand_u32() as usize % alphabet.len()] as char)
+        .collect()
 }
 
 /// Tiny PRNG so we don't pull a `rand` dep in for one helper. Uses
@@ -184,10 +278,10 @@ mod tests {
 
     #[test]
     fn preserves_non_ascii_text() {
-        let mut r = Resolver::new([("host", "https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}")]);
+        let mut r = Resolver::new([("host", "https://пример.рф")]);
         assert_eq!(
-            r.resolve("{{host}}/\u{43f}\u{443}\u{442}\u{44c}?q=\u{442}\u{435}\u{441}\u{442} \u{1f680}"),
-            "https://\u{43f}\u{440}\u{438}\u{43c}\u{435}\u{440}.\u{440}\u{444}/\u{43f}\u{443}\u{442}\u{44c}?q=\u{442}\u{435}\u{441}\u{442} \u{1f680}"
+            r.resolve("{{host}}/путь?q=тест 🚀"),
+            "https://пример.рф/путь?q=тест 🚀"
         );
     }
 
@@ -210,6 +304,73 @@ mod tests {
         assert!(resolved.starts_with("uuid="));
         assert!(resolved.contains(" ts="));
         // Built-ins don't show up as missing.
+        assert!(r.missing().is_empty());
+    }
+
+    #[test]
+    fn builtin_is_stable_within_one_request() {
+        let mut r = Resolver::new::<_, String, String>([]);
+        let header = r.resolve("{{$randomUuid}}");
+        let body = r.resolve("{\"request_id\":\"{{$randomUuid}}\"}");
+        assert!(body.contains(&header), "same id must reach header and body");
+        assert_eq!(r.resolve("{{$timestamp}}"), r.resolve("{{$timestamp}}"));
+    }
+
+    #[test]
+    fn builtin_differs_between_requests() {
+        let mut a = Resolver::new::<_, String, String>([]);
+        let mut b = Resolver::new::<_, String, String>([]);
+        assert_ne!(a.resolve("{{$randomUuid}}"), b.resolve("{{$randomUuid}}"));
+    }
+
+    #[test]
+    fn label_suffix_yields_independent_values() {
+        let mut r = Resolver::new::<_, String, String>([]);
+        let one = r.resolve("{{$randomUuid#outer}}");
+        let two = r.resolve("{{$randomUuid#inner}}");
+        assert_ne!(one, two);
+        assert_eq!(one, r.resolve("{{$randomUuid#outer}}"));
+        assert!(r.missing().is_empty());
+    }
+
+    #[test]
+    fn postman_aliases_resolve() {
+        let mut r = Resolver::new::<_, String, String>([]);
+        for name in ["$guid", "$randomUUID", "$randomHex", "$randomAlphaNumeric"] {
+            let out = r.resolve(&format!("{{{{{name}}}}}"));
+            assert!(!out.contains("{{"), "{name} left unresolved: {out}");
+        }
+        assert!(r.missing().is_empty());
+    }
+
+    #[test]
+    fn random_helpers_have_expected_shape() {
+        let mut r = Resolver::new::<_, String, String>([]);
+        let hex = r.resolve("{{$randomHex}}");
+        assert_eq!(hex.len(), 16);
+        assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+        let alnum = r.resolve("{{$randomAlphaNumeric}}");
+        assert_eq!(alnum.len(), 16);
+        assert!(alnum.chars().all(|c| c.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn env_var_overrides_builtin() {
+        let mut r = Resolver::new([("$timestamp", "0")]);
+        assert_eq!(r.resolve("{{$timestamp}}"), "0");
+    }
+
+    #[test]
+    fn every_catalogued_builtin_resolves() {
+        let mut r = Resolver::new::<_, String, String>([]);
+        for v in BUILTIN_VARS {
+            let out = r.resolve(&format!("{{{{{}}}}}", v.name));
+            assert!(
+                !out.is_empty() && !out.contains("{{"),
+                "{} unresolved",
+                v.name
+            );
+        }
         assert!(r.missing().is_empty());
     }
 

@@ -145,6 +145,7 @@ function ParamsTab() {
         rows={rows()}
         keyPlaceholder="Param"
         valuePlaceholder="Value"
+        suggestVars
         onChange={(r: RowEntry[]) => {
           const tabId = id();
           if (tabId) setQuery(tabId, r);
@@ -152,7 +153,11 @@ function ParamsTab() {
       />
       <p class="mt-3 px-3 text-[11px] text-fg-secondary">
         These params are appended to the URL on send. URLs in the bar above can
-        already include their own query string — both are merged.
+        already include their own query string — both are merged. Type{' '}
+        <code class="font-mono text-fg-primary">{'{{'}</code> in a value for
+        environment variables and dynamic ones like{' '}
+        <code class="font-mono text-fg-primary">{'{{$randomUuid}}'}</code>, which
+        is regenerated on every send.
       </p>
     </div>
   );
@@ -170,6 +175,7 @@ function HeadersTab() {
         rows={rows()}
         keyPlaceholder="Header"
         valuePlaceholder="Value"
+        suggestVars
         onChange={(r: RowEntry[]) => {
           const tabId = id();
           if (tabId) setHeaders(tabId, r);

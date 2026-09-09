@@ -51,6 +51,15 @@ export default [
     },
   },
   {
+    // Tests run in node, not the webview: a few of them read repo files
+    // (see `dynamic-vars.test.ts`, which guards the Rust/TS variable
+    // catalogues against drift).
+    files: ['**/*.test.{ts,tsx}'],
+    languageOptions: {
+      globals: { process: 'readonly' },
+    },
+  },
+  {
     ignores: ['dist/', 'node_modules/', '*.config.js', '*.config.ts'],
   },
 ];
