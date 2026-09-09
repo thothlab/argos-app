@@ -33,6 +33,9 @@ tracing-subscriber = { workspace = true }
 notify = { workspace = true }
 notify-debouncer-mini = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]

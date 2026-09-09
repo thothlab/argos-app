@@ -5,11 +5,12 @@
  * For T1.2 the elements are visible-but-inert so the layout reads correctly.
  */
 
-import { createSignal, Show } from 'solid-js';
+import { createEffect, createSignal, Show } from 'solid-js';
 
 import {
   ChevronDown,
   Command,
+  GitBranch,
   Download,
   LogOut,
   Monitor,
@@ -42,7 +43,11 @@ import {
 import { label } from '../lib/hotkeys';
 import { notify, notifyError } from '../lib/toast';
 import { pendingUpdate } from '../lib/updater';
+import { gitStatus } from '../lib/git';
+import { isTauri } from '../lib/tauri';
+import { gitOpen, openGit } from '../stores/git';
 import CurlImportModal from './CurlImportModal';
+import GitModal from './git/GitModal';
 import LogImportModal from './LogImportModal';
 import EnvironmentEditor from './EnvironmentEditor';
 
@@ -79,10 +84,51 @@ export default function TopBar() {
 
       <div class="flex-1" />
 
+      <GitTrigger />
       <CommandPaletteTrigger />
       <ThemeToggle />
       <SettingsTrigger />
     </header>
+  );
+}
+
+/**
+ * Branch indicator + entry point to the Git panel. Shown only for a
+ * workspace that is actually in a repository — the status probe runs
+ * once per workspace and again after the panel closes, since the panel
+ * is where the branch would have changed.
+ */
+function GitTrigger() {
+  const [repoBranch, setRepoBranch] = createSignal<string | null>(null);
+
+  createEffect(() => {
+    const ws = workspace();
+    if (!ws || !isTauri()) {
+      setRepoBranch(null);
+      return;
+    }
+    // Re-runs when the panel closes, so a checkout inside it shows here.
+    void gitOpen();
+    void gitStatus(ws.root)
+      .then((st) => setRepoBranch(st.branch))
+      .catch(() => setRepoBranch(null));
+  });
+
+  return (
+    <>
+      <button
+        type="button"
+        class="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+        title="Git panel"
+        onClick={() => openGit()}
+      >
+        <GitBranch size={14} />
+        <Show when={repoBranch()}>
+          <span class="max-w-[160px] truncate font-mono">{repoBranch()}</span>
+        </Show>
+      </button>
+      <GitModal />
+    </>
   );
 }
 
@@ -372,9 +418,7 @@ function EnvironmentPicker(props: { onManage: () => void }) {
   return (
     <Show
       when={ws()}
-      fallback={
-        <span class="font-mono text-[12px] text-fg-secondary">no env</span>
-      }
+      fallback={<span class="font-mono text-[12px] text-fg-secondary">no env</span>}
     >
       <Select<string>
         value={current()}

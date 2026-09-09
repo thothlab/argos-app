@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod ai;
+mod git;
 mod watcher;
 
 use std::path::{Path, PathBuf};
@@ -2042,6 +2043,36 @@ fn main() {
             open_url,
             ai::ai_extract_log,
             ai_import_extracted,
+            git::git_is_repo,
+            git::git_init,
+            git::git_status,
+            git::git_stage,
+            git::git_unstage,
+            git::git_discard,
+            git::git_apply_patch,
+            git::git_commit,
+            git::git_head_message,
+            git::git_branches,
+            git::git_create_branch,
+            git::git_checkout,
+            git::git_delete_branch,
+            git::git_rename_branch,
+            git::git_merge,
+            git::git_rebase,
+            git::git_cherry_pick,
+            git::git_revert,
+            git::git_reset,
+            git::git_operation_step,
+            git::git_push,
+            git::git_pull,
+            git::git_fetch,
+            git::git_stash_list,
+            git::git_stash_push,
+            git::git_stash_action,
+            git::git_log,
+            git::git_commit_details,
+            git::git_diff,
+            git::git_exec,
             #[cfg(debug_assertions)]
             crash_simulate,
         ])

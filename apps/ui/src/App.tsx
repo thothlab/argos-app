@@ -6,6 +6,7 @@ import CrashReportConsentModal from './components/CrashReportConsentModal';
 import CrashReportsPanel from './components/CrashReportsPanel';
 import SettingsPanel from './components/SettingsPanel';
 import GraphqlEditor from './components/GraphqlEditor';
+import ConfirmModal from './components/ConfirmModal';
 import PromptModal from './components/PromptModal';
 import ProtocolPlaceholder from './components/ProtocolPlaceholder';
 import RequestEditor from './components/RequestEditor';
@@ -134,6 +135,7 @@ export default function App() {
     <>
       <Toaster />
       <PromptModal />
+      <ConfirmModal />
       <CommandPalette />
       <CrashReportConsentModal />
       <CrashReportsPanel />
