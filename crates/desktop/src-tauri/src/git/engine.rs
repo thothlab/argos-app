@@ -728,10 +728,15 @@ impl Repo {
                 }
             }
             "index" => self.git(&["diff", "--no-color", "--cached", "--", path])?,
+            // `-m` alongside `--first-parent` is what makes a merge
+            // commit produce a diff at all: without it git suppresses
+            // merge diffs and the pane would say "no changes" for a
+            // file the commit demonstrably touched.
             commit => self.git(&[
                 "show",
                 "--no-color",
                 "--format=",
+                "-m",
                 "--first-parent",
                 commit,
                 "--",
@@ -1211,6 +1216,29 @@ mod tests {
             .hunks
             .iter()
             .any(|h| h.lines.iter().any(|l| l.origin == "+")));
+    }
+
+    #[test]
+    fn diff_of_a_file_in_a_merge_commit_is_not_empty() {
+        let dir = scratch_repo();
+        let p = dir.path();
+        let repo = Repo::discover(p).unwrap();
+
+        repo.create_branch("feature", None).unwrap();
+        std::fs::write(p.join("c.txt"), "from feature\n").unwrap();
+        repo.commit(&["c.txt".into()], "add c", false).unwrap();
+        repo.checkout("main", false).unwrap();
+        repo.merge("feature", true).unwrap();
+
+        let merge = repo.log(None, 0, 1, None).unwrap().remove(0);
+        assert_eq!(merge.parents.len(), 2, "expected a merge commit");
+        let d = repo.diff("c.txt", &merge.id).unwrap();
+        assert!(
+            d.hunks
+                .iter()
+                .any(|h| h.lines.iter().any(|l| l.origin == "+")),
+            "merge commit diff came back empty"
+        );
     }
 
     #[test]

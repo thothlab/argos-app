@@ -91,6 +91,11 @@ split into arguments and handed to `git` directly, so pipes, globbing
 and variable expansion are not available. A non-zero exit is printed,
 not treated as a failure: it is the answer the command was typed for.
 
+Commands that want an editor or a prompt fail immediately rather than
+hanging — `rebase -i`, `add -i`, `commit` with no `-m`. There is no
+terminal behind the panel to type into, so Argos tells git never to open
+one.
+
 ## Push and pull
 
 The header carries Fetch, Pull and Push plus the tracking counts.
