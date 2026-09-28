@@ -193,6 +193,14 @@ export default function VarInput(props: VarInputProps) {
               </li>
             )}
           </Index>
+          <Show when={items().some((i) => i.kind === 'dynamic')}>
+            <li class="border-t border-border px-2 py-1.5 text-[10px] leading-snug text-fg-secondary">
+              Same <code class="font-mono text-fg-primary">{'{{$randomUuid}}'}</code> everywhere
+              in one request; add <code class="font-mono text-fg-primary">#label</code> (
+              <code class="font-mono text-fg-primary">{'{{$randomUuid#a}}'}</code>) for a
+              different value at each spot.
+            </li>
+          </Show>
         </ul>
       </Show>
     </div>

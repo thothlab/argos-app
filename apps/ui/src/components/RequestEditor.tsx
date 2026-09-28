@@ -157,7 +157,12 @@ function ParamsTab() {
         <code class="font-mono text-fg-primary">{'{{'}</code> in a value for
         environment variables and dynamic ones like{' '}
         <code class="font-mono text-fg-primary">{'{{$randomUuid}}'}</code>, which
-        is regenerated on every send.
+        is regenerated on every send. It resolves to the same value everywhere
+        it appears in one request — add a{' '}
+        <code class="font-mono text-fg-primary">#label</code> (e.g.{' '}
+        <code class="font-mono text-fg-primary">{'{{$randomUuid#a}}'}</code> vs{' '}
+        <code class="font-mono text-fg-primary">{'{{$randomUuid#b}}'}</code>) when you need
+        distinct values in the same request.
       </p>
     </div>
   );
