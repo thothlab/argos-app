@@ -70,8 +70,9 @@ export default function UrlBar() {
           tests: outcome.tests,
           preRequestLogs: outcome.pre_request_logs,
           testsLogs: outcome.tests_logs,
+          rawRequest: outcome.raw_request,
         });
-        recordRun(tabId, wire, outcome.response, persist);
+        recordRun(tabId, wire, outcome.response, persist, outcome.raw_request);
       })
       .catch((e: unknown) => setResponse(tabId, { status: 'error', message: String(e) }));
   }

@@ -76,6 +76,7 @@ export type ResponseState =
       tests?: TestResult[];
       preRequestLogs?: string[];
       testsLogs?: string[];
+      rawRequest?: string;
     }
   | { status: 'error'; message: string };
 

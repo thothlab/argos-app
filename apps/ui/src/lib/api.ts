@@ -39,6 +39,10 @@ export type SendOutcome = {
   env_updates: Record<string, string>;
   /** Names the script(s) cleared via `bru.env.unset` / `pm.environment.unset`. */
   env_unsets?: string[];
+  /** The request as it actually went over the wire, rendered as `curl` —
+   *  vars (including `{{$randomUuid}}` and friends) already resolved to
+   *  the exact values that were sent. */
+  raw_request: string;
 };
 
 /**

@@ -125,8 +125,9 @@ export default function GraphqlEditor() {
         tests: outcome.tests,
         preRequestLogs: outcome.pre_request_logs,
         testsLogs: outcome.tests_logs,
+        rawRequest: outcome.raw_request,
       });
-      recordRun(id, wire, outcome.response, persist);
+      recordRun(id, wire, outcome.response, persist, outcome.raw_request);
     } catch (e) {
       setResponse(id, { status: 'error', message: e instanceof Error ? e.message : String(e) });
     }

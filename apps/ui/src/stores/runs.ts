@@ -31,6 +31,12 @@ export type Run = {
   request: HttpRequest;
   /** Server response. */
   response: HttpResponse;
+  /** The request as it went over the wire, as `curl` — vars already
+   *  resolved. In-memory only: it carries resolved secrets (Authorization
+   *  headers, `{{token}}` values) that env files keep behind `!secret`,
+   *  so it is deliberately never written to `runs/*.json`. Runs restored
+   *  from disk therefore have it undefined. */
+  rawRequest?: string;
 };
 
 const MAX_RUNS_PER_TAB = 100;
@@ -55,6 +61,7 @@ export function recordRun(
   request: HttpRequest,
   response: HttpResponse,
   persist?: PersistKey,
+  rawRequest?: string,
 ): Run {
   const run: Run = {
     id: nanoid(8),
@@ -62,6 +69,7 @@ export function recordRun(
     startedAt: Date.now(),
     request,
     response,
+    rawRequest,
   };
   setRunStore(
     produce((s) => {

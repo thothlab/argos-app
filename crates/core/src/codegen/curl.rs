@@ -24,7 +24,10 @@ pub fn to_curl(req: &HttpRequest) -> String {
     let mut out = String::with_capacity(128);
     out.push_str("curl");
 
-    if req.method != HttpMethod::Get {
+    // `-X GET` is normally redundant, but curl silently switches to POST
+    // as soon as `--data` is present — so a GET *with* a body has to say
+    // so explicitly, or the copied command sends the wrong verb.
+    if req.method != HttpMethod::Get || req.body.is_some() {
         write!(out, " \\\n  -X {}", req.method.as_str()).unwrap();
     }
 
@@ -535,6 +538,22 @@ mod tests {
         assert!(cmd.starts_with("curl"));
         assert!(!cmd.contains("-X "));
         assert!(cmd.contains("'https://api.example.com/users'"));
+    }
+
+    #[test]
+    fn get_with_body_keeps_explicit_method() {
+        // curl flips to POST the moment `--data` appears, so a GET that
+        // carries a body has to spell the verb out.
+        let req = HttpRequest {
+            url: "https://api.example.com/users".into(),
+            body: Some(HttpBody::Json {
+                value: serde_json::json!({ "req_id": "abc" }),
+            }),
+            ..Default::default()
+        };
+        let cmd = to_curl(&req);
+        assert!(cmd.contains("-X GET"));
+        assert!(cmd.contains("--data"));
     }
 
     #[test]

@@ -81,6 +81,12 @@ pub struct SendOutcome {
     /// `pm.environment.unset`. Empty array if none.
     #[serde(default)]
     pub env_unsets: Vec<String>,
+    /// The request as it actually went over the wire, rendered as `curl` —
+    /// after pre-request script mutations and `{{var}}` resolution
+    /// (including dynamic ones like `$randomUuid`, whose value is fixed
+    /// at send time). Re-running `request_to_curl` afterwards would mint
+    /// a *new* random value; this is the one that was actually sent.
+    pub raw_request: String,
 }
 
 /// Execute one HTTP request via `argos-core` and return the buffered response.
@@ -156,6 +162,7 @@ async fn send_request(
     }
 
     let resolved = resolve_request(req, env.clone());
+    let raw_request = curl::to_curl(&resolved);
     let client = http_client(&state).await?;
     let response = client.execute(&resolved).await.map_err(|e| e.to_string())?;
 
@@ -197,6 +204,7 @@ async fn send_request(
         tests,
         env_updates,
         env_unsets,
+        raw_request,
     })
 }
 

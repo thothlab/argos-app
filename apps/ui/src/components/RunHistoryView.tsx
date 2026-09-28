@@ -36,7 +36,11 @@ export default function RunHistoryView() {
   function loadRun(run: Run): void {
     // Materialise a past run as the current response — the user can still
     // edit the request and re-send to get a fresh one.
-    setResponse(run.tabId, { status: 'ok', response: run.response });
+    setResponse(run.tabId, {
+      status: 'ok',
+      response: run.response,
+      rawRequest: run.rawRequest,
+    });
   }
 
   function clearForActiveTab(): void {

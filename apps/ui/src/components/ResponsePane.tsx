@@ -39,7 +39,7 @@ const PRETTY_JSON_BUDGET_BYTES = 2_000_000;
 // CTA instead of pushing tens of MB into a <pre>.
 const HUGE_BODY_BYTES = 10_000_000;
 
-type BodyTab = 'body' | 'headers' | 'timing' | 'tests';
+type BodyTab = 'body' | 'headers' | 'timing' | 'tests' | 'raw';
 
 export default function ResponsePane() {
   const tabId = activeTabId;
@@ -72,6 +72,7 @@ export default function ResponsePane() {
                 tests={s.tests ?? []}
                 preRequestLogs={s.preRequestLogs ?? []}
                 testsLogs={s.testsLogs ?? []}
+                rawRequest={s.rawRequest ?? null}
               />
             );
           }}
@@ -118,6 +119,7 @@ function OkPane(props: {
   tests: TestResult[];
   preRequestLogs: string[];
   testsLogs: string[];
+  rawRequest: string | null;
 }) {
   const [activePane, setActivePane] = createSignal<BodyTab>('body');
 
@@ -173,6 +175,7 @@ function OkPane(props: {
           { id: 'headers' as BodyTab, label: 'Headers' },
           { id: 'timing' as BodyTab, label: 'Timing' },
           { id: 'tests' as BodyTab, label: 'Tests' },
+          { id: 'raw' as BodyTab, label: 'Raw' },
         ]}>
           {(t) => (
             <button
@@ -234,6 +237,9 @@ function OkPane(props: {
               preRequestLogs={props.preRequestLogs}
               testsLogs={props.testsLogs}
             />
+          </Match>
+          <Match when={activePane() === 'raw'}>
+            <RawRequestView rawRequest={props.rawRequest} />
           </Match>
         </Switch>
       </div>
@@ -416,6 +422,48 @@ function HeadersView(props: { headers: HttpResponse['headers'] }) {
         </For>
       </tbody>
     </table>
+  );
+}
+
+/**
+ * The request as it actually went over the wire — `curl` form, with
+ * `{{vars}}` (including dynamic ones like `$randomUuid`) already resolved
+ * to the exact values that were sent. Comes from `SendOutcome.raw_request`
+ * rather than being regenerated here: regenerating would mint a *new*
+ * random UUID and show the wrong one.
+ */
+function RawRequestView(props: { rawRequest: string | null }) {
+  const [copied, setCopied] = createSignal(false);
+
+  async function copy() {
+    if (!props.rawRequest) return;
+    await navigator.clipboard.writeText(props.rawRequest);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  return (
+    <Show
+      when={props.rawRequest}
+      fallback={
+        <p class="p-4 text-[12px] text-fg-secondary">
+          Not available for this response — re-send the request to capture it.
+        </p>
+      }
+    >
+      {(raw) => (
+        <div class="relative">
+          <button
+            type="button"
+            class="absolute right-3 top-3 rounded border border-border bg-bg-card px-2 py-1 text-[11px] text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+            onClick={() => void copy()}
+          >
+            {copied() ? 'Copied' : 'Copy'}
+          </button>
+          <pre class="whitespace-pre-wrap break-all p-4 pr-16 font-mono text-[12px]">{raw()}</pre>
+        </div>
+      )}
+    </Show>
   );
 }
 
