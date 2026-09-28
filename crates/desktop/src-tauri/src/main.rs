@@ -1898,6 +1898,14 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
         ..Default::default()
     };
 
+    let check_updates_item = MenuItem::with_id(
+        app,
+        "app-check-updates",
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?;
+
     let prefs_item = MenuItem::with_id(
         app,
         "app-prefs",
@@ -1909,6 +1917,7 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
     let app_submenu = SubmenuBuilder::new(app, "Argos")
         .about(Some(about))
         .separator()
+        .item(&check_updates_item)
         .item(&prefs_item)
         .separator()
         .services()
@@ -1960,6 +1969,11 @@ fn install_app_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
             // Forward to the renderer — the actual Settings UI lives there.
             // Event name matches the listener in `apps/ui/src/App.tsx`.
             let _ = app.emit("settings:open", ());
+        }
+        if event.id() == "app-check-updates" {
+            // Opens Settings → Advanced (where the updater UI lives) and
+            // kicks off a manual check — see `native-menu.ts`.
+            let _ = app.emit("settings:check-updates", ());
         }
         if event.id() == "help-docs" {
             // `tauri-plugin-shell::Shell::open` is marked deprecated in favour

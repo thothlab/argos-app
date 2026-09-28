@@ -10,6 +10,7 @@
 import { listen } from '@tauri-apps/api/event';
 
 import { isTauri } from './tauri';
+import { checkForUpdatesNow } from './updater';
 import { openSettings } from '../stores/settings-panel';
 
 let installed = false;
@@ -20,6 +21,12 @@ export async function installNativeMenuBridge(): Promise<void> {
   try {
     // Argos → Settings… (CmdOrCtrl+,)
     await listen('settings:open', () => openSettings());
+    // Argos → Check for Updates… — surface the same Advanced tab the
+    // manual "Check for updates" button lives on, then run the check.
+    await listen('settings:check-updates', () => {
+      openSettings('advanced');
+      void checkForUpdatesNow();
+    });
   } catch {
     // Best-effort — UI hotkeys + on-screen buttons still work.
     installed = false;
