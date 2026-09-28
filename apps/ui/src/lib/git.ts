@@ -80,6 +80,8 @@ export type FileDiff = { path: string; binary: boolean; hunks: Hunk[] };
 
 export type StashEntry = { name: string; message: string; timestamp: number };
 
+export type RemoteInfo = { name: string; url: string };
+
 export type RawOutput = { stdout: string; stderr: string; exitCode: number };
 
 /** `worktree` = unstaged changes, `index` = staged, or a commit id. */
@@ -208,6 +210,26 @@ export async function gitPull(workspace: string, rebase: boolean): Promise<void>
 
 export async function gitFetch(workspace: string): Promise<void> {
   return invokeCommand<void>('git_fetch', { workspace });
+}
+
+export async function gitRemoteList(workspace: string): Promise<RemoteInfo[]> {
+  return invokeCommand<RemoteInfo[]>('git_remote_list', { workspace });
+}
+
+export async function gitRemoteAdd(workspace: string, name: string, url: string): Promise<void> {
+  return invokeCommand<void>('git_remote_add', { workspace, name, url });
+}
+
+export async function gitRemoteSetUrl(
+  workspace: string,
+  name: string,
+  url: string,
+): Promise<void> {
+  return invokeCommand<void>('git_remote_set_url', { workspace, name, url });
+}
+
+export async function gitRemoteRemove(workspace: string, name: string): Promise<void> {
+  return invokeCommand<void>('git_remote_remove', { workspace, name });
 }
 
 export async function gitStashList(workspace: string): Promise<StashEntry[]> {

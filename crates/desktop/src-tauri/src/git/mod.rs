@@ -19,7 +19,9 @@ pub mod engine;
 pub mod model;
 
 use engine::Repo;
-use model::{BranchInfo, CommitDetails, CommitRow, FileDiff, RawOutput, RepoStatus, StashEntry};
+use model::{
+    BranchInfo, CommitDetails, CommitRow, FileDiff, RawOutput, RemoteInfo, RepoStatus, StashEntry,
+};
 
 fn repo(workspace: &str) -> Result<Repo, String> {
     Repo::discover(Path::new(workspace))
@@ -179,6 +181,26 @@ pub fn git_pull(workspace: String, rebase: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn git_fetch(workspace: String) -> Result<(), String> {
     repo(&workspace)?.fetch()
+}
+
+#[tauri::command]
+pub fn git_remote_list(workspace: String) -> Result<Vec<RemoteInfo>, String> {
+    repo(&workspace)?.remote_infos()
+}
+
+#[tauri::command]
+pub fn git_remote_add(workspace: String, name: String, url: String) -> Result<(), String> {
+    repo(&workspace)?.add_remote(&name, &url)
+}
+
+#[tauri::command]
+pub fn git_remote_set_url(workspace: String, name: String, url: String) -> Result<(), String> {
+    repo(&workspace)?.set_remote_url(&name, &url)
+}
+
+#[tauri::command]
+pub fn git_remote_remove(workspace: String, name: String) -> Result<(), String> {
+    repo(&workspace)?.remove_remote(&name)
 }
 
 #[tauri::command]

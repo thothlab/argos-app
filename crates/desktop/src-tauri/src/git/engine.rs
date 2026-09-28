@@ -18,7 +18,7 @@ use std::process::{Command, Stdio};
 
 use super::model::{
     BranchInfo, CommitDetails, CommitRow, DiffLine, FileDiff, FileState, FileStatus, Hunk,
-    Operation, RawOutput, RefKind, RefLabel, RepoStatus, StashEntry,
+    Operation, RawOutput, RefKind, RefLabel, RemoteInfo, RepoStatus, StashEntry,
 };
 
 /// Field separator inside `--format` strings: a byte no commit message,
@@ -581,6 +581,40 @@ impl Repo {
 
     pub fn fetch(&self) -> Result<()> {
         self.git(&["fetch", "--prune"])?;
+        Ok(())
+    }
+
+    // ── remotes ─────────────────────────────────────────────────────────
+
+    /// `git remote -v` lists fetch and push lines per remote; a plain
+    /// remote has both pointing at the same URL, so keep only `(fetch)`.
+    pub fn remote_infos(&self) -> Result<Vec<RemoteInfo>> {
+        let out = self.git(&["remote", "-v"])?;
+        Ok(out
+            .lines()
+            .filter_map(|l| {
+                let l = l.strip_suffix(" (fetch)")?;
+                let (name, url) = l.split_once('\t')?;
+                Some(RemoteInfo {
+                    name: name.to_string(),
+                    url: url.to_string(),
+                })
+            })
+            .collect())
+    }
+
+    pub fn add_remote(&self, name: &str, url: &str) -> Result<()> {
+        self.git(&["remote", "add", name, url])?;
+        Ok(())
+    }
+
+    pub fn set_remote_url(&self, name: &str, url: &str) -> Result<()> {
+        self.git(&["remote", "set-url", name, url])?;
+        Ok(())
+    }
+
+    pub fn remove_remote(&self, name: &str) -> Result<()> {
+        self.git(&["remote", "remove", name])?;
         Ok(())
     }
 

@@ -9,7 +9,7 @@
 
 import { createSignal, For, Show, type JSX } from 'solid-js';
 
-import { Check } from 'lucide-solid';
+import { Check, X } from 'lucide-solid';
 
 import { confirmAction } from '../../lib/confirm';
 import { promptText } from '../../lib/prompt';
@@ -19,10 +19,14 @@ import {
   gitDeleteBranch,
   gitMerge,
   gitRebase,
+  gitRemoteAdd,
+  gitRemoteRemove,
+  gitRemoteSetUrl,
   gitRenameBranch,
   type BranchInfo,
+  type RemoteInfo,
 } from '../../lib/git';
-import { branches, error, run, setError, status } from '../../stores/git';
+import { branches, error, remotes, run, setError, status } from '../../stores/git';
 
 export default function BranchesTab(_props: { workspace: string }) {
   const [filter, setFilter] = createSignal('');
@@ -94,6 +98,45 @@ export default function BranchesTab(_props: { workspace: string }) {
     await run((ws) => gitMerge(ws, b.name, false));
   }
 
+  const [addRemoteOpen, setAddRemoteOpen] = createSignal(false);
+  const [addName, setAddName] = createSignal('origin');
+  const [addUrl, setAddUrl] = createSignal('');
+
+  function openAddRemote() {
+    setAddName('origin');
+    setAddUrl('');
+    setAddRemoteOpen(true);
+  }
+
+  async function submitAddRemote() {
+    const name = addName().trim();
+    const url = addUrl().trim();
+    if (!name || !url) return;
+    setAddRemoteOpen(false);
+    await run((ws) => gitRemoteAdd(ws, name, url));
+  }
+
+  async function editRemote(r: RemoteInfo) {
+    const url = await promptText({
+      title: `Edit remote "${r.name}"`,
+      defaultValue: r.url,
+      submitLabel: 'Save',
+    });
+    if (!url || url === r.url) return;
+    await run((ws) => gitRemoteSetUrl(ws, r.name, url));
+  }
+
+  async function removeRemote(r: RemoteInfo) {
+    const ok = await confirmAction({
+      title: `Remove remote "${r.name}"?`,
+      description: 'Local branches tracking it keep their history but lose their upstream link.',
+      confirmLabel: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    await run((ws) => gitRemoteRemove(ws, r.name));
+  }
+
   async function rebase(b: BranchInfo) {
     const ok = await confirmAction({
       title: `Rebase ${status()?.branch ?? 'HEAD'} onto ${b.name}?`,
@@ -127,6 +170,34 @@ export default function BranchesTab(_props: { workspace: string }) {
       </header>
 
       <div class="flex-1 overflow-auto scrollbar-thin">
+        <Group
+          title="Remotes"
+          action={<Mini label="Add remote" onClick={openAddRemote} />}
+        >
+          <Show
+            when={remotes().length > 0}
+            fallback={
+              <p class="px-3 py-2 text-[12px] text-fg-secondary">
+                No remote configured — add one to push and pull.
+              </p>
+            }
+          >
+            <For each={remotes()}>
+              {(r) => (
+                <div class="group flex items-center gap-2 px-3 py-1 font-mono text-[12px] hover:bg-bg-secondary/60">
+                  <span class="min-w-0 flex-1 truncate" title={r.url}>
+                    {r.name} <span class="text-fg-secondary">{r.url}</span>
+                  </span>
+                  <span class="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100">
+                    <Mini label="Edit" onClick={() => void editRemote(r)} />
+                    <Mini label="Remove" danger onClick={() => void removeRemote(r)} />
+                  </span>
+                </div>
+              )}
+            </For>
+          </Show>
+        </Group>
+
         <Group title="Local">
           <For each={local()}>
             {(b) => (
@@ -156,15 +227,102 @@ export default function BranchesTab(_props: { workspace: string }) {
           </For>
         </Group>
       </div>
+
+      <Show when={addRemoteOpen()}>
+        <div
+          class="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-bg-primary/70"
+          role="dialog"
+          aria-modal="true"
+          data-kb-top-layer
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAddRemoteOpen(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              setAddRemoteOpen(false);
+            }
+          }}
+        >
+          <div class="flex w-[420px] flex-col gap-3 rounded-xl border border-border bg-bg-card p-5 shadow-xl">
+            <header class="flex items-start justify-between gap-3">
+              <h2 class="text-[14px] font-semibold">Add remote</h2>
+              <button
+                type="button"
+                class="rounded p-1 text-fg-secondary hover:bg-bg-secondary hover:text-fg-primary"
+                onClick={() => setAddRemoteOpen(false)}
+                aria-label="Cancel"
+              >
+                <X size={14} />
+              </button>
+            </header>
+
+            <label class="flex flex-col gap-1">
+              <span class="text-[11px] text-fg-secondary">Name</span>
+              <input
+                type="text"
+                spellcheck={false}
+                autocomplete="off"
+                class="h-9 rounded border border-border bg-bg-primary px-3 font-mono text-[13px] outline-none focus:border-primary"
+                value={addName()}
+                onInput={(e) => setAddName(e.currentTarget.value)}
+              />
+            </label>
+
+            <label class="flex flex-col gap-1">
+              <span class="text-[11px] text-fg-secondary">URL</span>
+              <input
+                ref={(el) => {
+                  requestAnimationFrame(() => el?.focus());
+                }}
+                type="text"
+                spellcheck={false}
+                autocomplete="off"
+                class="h-9 rounded border border-border bg-bg-primary px-3 font-mono text-[13px] outline-none focus:border-primary"
+                placeholder="git@github.com:org/repo.git"
+                value={addUrl()}
+                onInput={(e) => setAddUrl(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void submitAddRemote();
+                  }
+                }}
+              />
+            </label>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                class="rounded px-3 py-1.5 text-[12px] hover:bg-bg-secondary"
+                onClick={() => setAddRemoteOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="rounded bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                disabled={!addName().trim() || !addUrl().trim()}
+                onClick={() => void submitAddRemote()}
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
     </div>
   );
 }
 
-function Group(props: { title: string; children: JSX.Element }) {
+function Group(props: { title: string; action?: JSX.Element; children: JSX.Element }) {
   return (
     <section>
-      <h3 class="sticky top-0 z-10 border-b border-border bg-bg-card px-3 py-1.5 text-[11px] font-medium uppercase tracking-widest text-fg-secondary">
-        {props.title}
+      <h3 class="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-bg-card px-3 py-1.5 text-[11px] font-medium uppercase tracking-widest text-fg-secondary">
+        <span>{props.title}</span>
+        <Show when={props.action}>
+          <span class="normal-case tracking-normal">{props.action}</span>
+        </Show>
       </h3>
       {props.children}
     </section>

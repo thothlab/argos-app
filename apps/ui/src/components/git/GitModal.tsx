@@ -29,6 +29,7 @@ import {
   error,
   gitOpen,
   gitTab,
+  isRepo,
   repoWorkspace,
   run,
   setError,
@@ -169,7 +170,7 @@ export default function GitModal() {
           </Show>
 
           <Show
-            when={status()}
+            when={isRepo() !== false}
             fallback={
               <div class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
                 <p class="text-[13px] text-fg-secondary">

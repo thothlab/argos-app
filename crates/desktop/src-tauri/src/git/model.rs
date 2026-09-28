@@ -70,6 +70,16 @@ pub struct RepoStatus {
     pub files: Vec<FileStatus>,
 }
 
+/// A configured remote (`git remote -v`), fetch URL only — push URLs
+/// only differ when someone has deliberately split them, which the UI
+/// does not offer a way to do.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteInfo {
+    pub name: String,
+    pub url: String,
+}
+
 /// A branch (local or remote-tracking) for the branch list.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

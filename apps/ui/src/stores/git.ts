@@ -12,11 +12,14 @@ import { createSignal } from 'solid-js';
 
 import {
   gitBranches,
+  gitIsRepo,
   gitLog,
+  gitRemoteList,
   gitStashList,
   gitStatus,
   type BranchInfo,
   type CommitRow,
+  type RemoteInfo,
   type RepoStatus,
   type StashEntry,
 } from '../lib/git';
@@ -29,7 +32,18 @@ const PAGE = 100;
 const [gitOpen, setGitOpen] = createSignal(false);
 const [gitTab, setGitTab] = createSignal<GitTab>('changes');
 const [status, setStatus] = createSignal<RepoStatus | null>(null);
+/**
+ * Whether the workspace is a git repository at all — `null` while that
+ * is still being determined. Kept separate from `status`: a `git status`
+ * call can fail for reasons that have nothing to do with there being a
+ * repository (a transient shell hiccup, a half-finished operation), and
+ * collapsing both into one signal used to make the panel show "not a
+ * git repository" — with an offer to re-init on top of an existing one —
+ * whenever status merely failed to load.
+ */
+const [isRepo, setIsRepo] = createSignal<boolean | null>(null);
 const [branches, setBranches] = createSignal<BranchInfo[]>([]);
+const [remotes, setRemotes] = createSignal<RemoteInfo[]>([]);
 const [stashes, setStashes] = createSignal<StashEntry[]>([]);
 const [commits, setCommits] = createSignal<CommitRow[]>([]);
 const [logHasMore, setLogHasMore] = createSignal(false);
@@ -44,8 +58,10 @@ export {
   error,
   gitOpen,
   gitTab,
+  isRepo,
   logAllRefs,
   logHasMore,
+  remotes,
   setError,
   setGitTab,
   stashes,
@@ -96,19 +112,29 @@ export async function run<T>(action: (ws: string) => Promise<T>): Promise<T | nu
 export async function refreshAll(): Promise<void> {
   const ws = repoWorkspace();
   if (!ws) return;
+
+  const repoExists = await gitIsRepo(ws).catch(() => false);
+  setIsRepo(repoExists);
+  if (!repoExists) {
+    setStatus(null);
+    return;
+  }
+
+  // Independent of `git status` below: a repo with a broken HEAD or a
+  // status parse edge case shouldn't also blank out branches/log/stashes.
   try {
     setStatus(await gitStatus(ws));
   } catch (e) {
-    setStatus(null);
     setError(e instanceof Error ? e.message : String(e));
-    return;
   }
-  const [b, s] = await Promise.all([
+  const [b, s, r] = await Promise.all([
     gitBranches(ws).catch(() => [] as BranchInfo[]),
     gitStashList(ws).catch(() => [] as StashEntry[]),
+    gitRemoteList(ws).catch(() => [] as RemoteInfo[]),
   ]);
   setBranches(b);
   setStashes(s);
+  setRemotes(r);
   await loadLog(false);
 }
 
