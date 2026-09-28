@@ -6,6 +6,7 @@ mod git;
 mod watcher;
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use std::collections::HashMap;
@@ -1985,11 +1986,13 @@ fn main() {
     let state: AppState = Arc::new(OnceCell::new());
     let active_watcher = ActiveWatcher::default();
     let ws_registry: WsRegistry = Arc::new(Mutex::new(HashMap::new()));
+    let ai_extract_cancel: ai::AiExtractCancel = Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
         .manage(state)
         .manage(active_watcher)
         .manage(ws_registry)
+        .manage(ai_extract_cancel)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -2049,7 +2052,9 @@ fn main() {
             crash_list_submitted,
             crash_reveal_dir,
             open_url,
-            ai::ai_extract_log,
+            ai::ai_extract_split,
+            ai::ai_extract_chunk,
+            ai::ai_extract_cancel,
             ai_import_extracted,
             git::git_is_repo,
             git::git_init,

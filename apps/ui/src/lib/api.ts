@@ -184,28 +184,57 @@ export type AiExtractedRequest = {
   body?: AiExtractedBody;
 };
 
-export type AiExtractResponse = {
+export type AiChunkResponse = {
   requests: AiExtractedRequest[];
-  /** Raw model output before JSON parsing — surfaced for debugging
-   *  when the parsed list isn't what the user expected. */
+  /** Raw provider output before JSON parsing. The UI keeps this for the
+   *  per-chunk transcript shown when extraction quality is bad. */
   raw: string;
 };
 
-/** Hard input cap enforced by the Rust side; mirror it here so the UI
- *  can show live size and disable Extract before the round-trip. */
-export const AI_MAX_LOG_BYTES = 50 * 1024;
+/** Hard input cap enforced by the Rust side. The log is chunked before
+ *  it's sent, so this is more about wall-clock + cost than a single
+ *  provider's context limit. Mirrors `ai::MAX_LOG_BYTES`. */
+export const AI_MAX_LOG_BYTES = 256 * 1024;
 
-/** Send a log blob to the configured AI provider and parse the
- *  extracted requests. All four fields come from `settings.ai.*` —
- *  the Rust side validates them and returns a typed error otherwise. */
-export async function aiExtractLog(input: {
+/** Bytes per chunk on the Rust side. Mirrors `ai::TARGET_CHUNK_BYTES`
+ *  so the UI can show "log is ~N chunks" before Extract runs. */
+export const AI_CHUNK_BYTES = 8 * 1024;
+
+/** AI settings that travel with every per-chunk call. The Rust side
+ *  validates `model` + `baseUrl` per call so we can surface config
+ *  errors before burning provider quota on the first chunk. */
+export type AiExtractInput = {
   provider: string;
   apiKey: string;
   baseUrl: string;
   model: string;
-  logText: string;
-}): Promise<AiExtractResponse> {
-  return invokeCommand<AiExtractResponse>('ai_extract_log', { request: input });
+};
+
+/** Ask Rust to split the log into byte-bounded chunks. Returns the
+ *  chunk list the UI will iterate over (calling `aiExtractChunk` per
+ *  chunk and dedup'ing locally). Also resets the shared cancel flag,
+ *  so a stale Cancel from a previous run can't poison the first
+ *  chunk of this one. */
+export async function aiExtractSplit(logText: string): Promise<string[]> {
+  return invokeCommand<string[]>('ai_extract_split', { logText });
+}
+
+/** Run one chunk through the provider. The in-flight HTTP call races
+ *  the shared cancel flag — a Cancel from the UI aborts the request
+ *  immediately rather than waiting for the per-chunk timeout. Returns
+ *  `Err('cancelled')` when that happens, so callers can branch. */
+export async function aiExtractChunk(
+  input: AiExtractInput,
+  chunkText: string,
+): Promise<AiChunkResponse> {
+  return invokeCommand<AiChunkResponse>('ai_extract_chunk', { input, chunkText });
+}
+
+/** Flip the cancel flag on the Rust side. Within ~50 ms the in-flight
+ *  chunk's HTTP future is dropped and `aiExtractChunk` returns the
+ *  `"cancelled"` error so the loop can stop. */
+export async function aiExtractCancel(): Promise<void> {
+  return invokeCommand<void>('ai_extract_cancel');
 }
 
 /** Where extracted requests should land in the workspace. */
