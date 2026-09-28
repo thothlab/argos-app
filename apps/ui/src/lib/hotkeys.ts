@@ -37,6 +37,11 @@ function ensureListener() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('keydown', (e) => {
+    // Held-down keys auto-repeat `keydown`. Fine for most shortcuts, but
+    // one that opens a native OS dialog (e.g. Save As) would fire it
+    // again before the first has closed — macOS then stacks a second,
+    // unresponsive sheet on top of the first.
+    if (e.repeat) return;
     // Skip when an input/textarea/contenteditable is focused, unless the
     // combo uses meta (those are app-level shortcuts that should always fire).
     const target = e.target as HTMLElement | null;

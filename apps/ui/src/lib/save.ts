@@ -30,7 +30,24 @@ export type SaveOutcome =
   | { kind: 'no-workspace' }
   | { kind: 'error'; message: string };
 
+// Guards against a second native Save-As sheet stacking on top of a
+// still-open one — macOS only tracks one as the "active" panel, so the
+// visible one stops responding to clicks until the hidden one behind it
+// is dismissed. Re-entrant calls (key repeat, a double Cmd+S) are the
+// easiest way to trigger this.
+let saving = false;
+
 export async function saveActiveTab(): Promise<SaveOutcome> {
+  if (saving) return { kind: 'cancelled' };
+  saving = true;
+  try {
+    return await saveActiveTabInner();
+  } finally {
+    saving = false;
+  }
+}
+
+async function saveActiveTabInner(): Promise<SaveOutcome> {
   const tabId = activeTabId();
   const t = activeTab();
   if (!tabId || !t) return { kind: 'no-tab' };
